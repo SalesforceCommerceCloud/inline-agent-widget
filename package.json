@@ -1,0 +1,72 @@
+{
+  "name": "inline-agent-widget",
+  "version": "0.1.0",
+  "description": "A bare-minimum, embeddable inline chat widget for Salesforce Agentforce (SCRT2 Messaging for In-App and Web). Renders agent replies as sanitized markdown inside a Shadow DOM.",
+  "type": "module",
+  "main": "./dist/inline-agent-widget.umd.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/inline-agent-widget.umd.js",
+  "jsdelivr": "./dist/inline-agent-widget.umd.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/inline-agent-widget.umd.js"
+    },
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:esm && npm run build:umd",
+    "build:esm": "vite build",
+    "build:umd": "vite build --config vite.umd.config.ts",
+    "preview": "npm run build && vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "salesforce",
+    "scrt2",
+    "agentforce",
+    "messaging",
+    "sse",
+    "chat",
+    "widget",
+    "web-component",
+    "shadow-dom",
+    "markdown",
+    "react"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.12",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^4.1.8"
+  }
+}

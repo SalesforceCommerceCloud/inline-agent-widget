@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.vite
+*.log
+.DS_Store
+.agents
+*.tgz
+
+# Local env files — never commit real secrets.
+.env
+.env.*
+*.local.ts

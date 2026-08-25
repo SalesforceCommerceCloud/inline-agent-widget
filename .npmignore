@@ -1,0 +1,10 @@
+src
+tests
+demo
+*.config.ts
+tsconfig.json
+.gitignore
+coverage
+.vite
+*.log
+.DS_Store

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>inline-agent-widget demo</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #fafafa;
+        color: #1a1a1a;
+      }
+      .page {
+        max-width: 640px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        font-size: 20px;
+      }
+      p {
+        color: #555;
+        line-height: 1.6;
+      }
+      code {
+        background: #eee;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>inline-agent-widget — inline demo</h1>
+      <p>
+        The widget below is an always-visible inline block (not a floating popup). Replace the
+        placeholder attributes with your real Salesforce SCRT2 (Agentforce MIAW) values in
+        <code>demo/index.html</code>, then reload.
+      </p>
+
+      <!--
+        Custom-element usage. On any page that has loaded the bundle, this tag
+        upgrades itself — no JS call required. In production you would load the
+        self-contained UMD bundle from a CDN instead of the dev module below:
+
+          <script src="https://unpkg.com/inline-agent-widget"></script>
+      -->
+      <!--
+        DEMO CONFIG — replace the placeholders below with your own org's values,
+        then reload (`npm run dev`). The three required identifiers come from your
+        Embedded Service (Messaging for In-App and Web) deployment in Salesforce
+        Setup. They are PUBLIC client identifiers — the same values Salesforce's
+        own embedded-messaging snippet exposes in the browser — not secrets:
+          • scrt2-url          the SCRT2 base URL, e.g.
+                                https://<instance>.salesforce-scrt.com
+          • org-id             your 15- or 18-char Salesforce Organization ID
+          • es-developer-name  the Embedded Service deployment's developer name
+        The placeholders below are not real, so the widget will fail to connect on
+        first send until you fill them in (open the browser console; the
+        `enable-logging` attribute traces the token → SSE → conversation handshake).
+
+        `persist-session` turns on localStorage-backed persistence so the
+        conversation survives reload / navigation. A stored session is reused
+        until the token's own JWT `exp` (set by the server at mint); an expired
+        token is refused and re-minted. With `enable-logging`, reload+send logs
+        "Restoring session for conversation …" (no token mint) on a hit, or
+        "persist: no restorable session …" before a fresh handshake.
+      -->
+      <inline-agent-widget
+        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+        org-id="YOUR_ORG_ID"
+        es-developer-name="YOUR_ES_DEVELOPER_NAME"
+        capabilities-version="1"
+        placeholder="Type a message…"
+        persist-session
+        enable-logging
+      ></inline-agent-widget>
+    </div>
+
+    <!--
+      Dev: import the source entry so `npm run dev` gives live TypeScript + HMR.
+      Importing the module runs defineElement() as a side effect, which registers
+      <inline-agent-widget>.
+    -->
+    <script type="module" src="/src/index.ts"></script>
+  </body>
+</html>
