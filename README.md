@@ -82,12 +82,31 @@ If `elementId` isn't in the DOM yet, `mount()` waits for it via a `MutationObser
 | `es-developer-name` | ✅ | Embedded Service deployment developer name. |
 | `capabilities-version` | | Capabilities version sent with the token request (default `1`). |
 | `placeholder` | | Placeholder text for the input (default `Type a message…`). |
+| `product-id-param` | | PDP product context (never shown). Query-string parameter to read the product id from, e.g. `pid`. See [Product context (PDP)](#product-context-pdp). |
+| `product-id-pattern` | | PDP product context (never shown). Regex matched against the URL path; capture group 1 is the product id, e.g. `/product/([^/?#]+)`. See [Product context (PDP)](#product-context-pdp). |
 | `enable-logging` | | Present ⇒ enables `[Agentforce]` debug logging in the console. |
 | `persist-session` | | Present ⇒ persist the anonymous session so the conversation survives page navigation / reload / restart (default **off**), until the token's own JWT `exp`. **Read the security note below before enabling.** |
 
 These three required values are the same **non-secret** identifiers Salesforce's own embedded messaging snippet uses for anonymous sessions. Connection attributes are read at mount; treat them as set-once.
 
-The `mount()` API takes the camelCase equivalents (`scrt2Url`, `orgId`, `esDeveloperName`, `capabilitiesVersion`, `placeholder`, `enableLogging`, `persistSession`).
+The `mount()` API takes the camelCase equivalents (`scrt2Url`, `orgId`, `esDeveloperName`, `capabilitiesVersion`, `placeholder`, `productIdParam`, `productIdPattern`, `enableLogging`, `persistSession`).
+
+## Product context (PDP)
+
+When the widget sits on a Product Detail Page, it can automatically tell the agent which product the shopper is looking at — so they can ask "is this waterproof?" without naming it. Set one of the URL-extraction attributes and, on every send, the widget derives the product id from the page URL and prepends a single line to the message **sent** to the agent:
+
+```text
+Viewing product details for: <productId>
+
+<the shopper's message>
+```
+
+That line is **never shown in the widget UI** — the widget has no transcript and never renders the outgoing text, so it travels only in the request body. If no id can be resolved (neither attribute set, no match on the current URL, or not on a PDP), the message is sent unchanged.
+
+- **SFRA** (`Product-Show?pid=…`): `product-id-param="pid"`.
+- **PWA Kit** (`/product/{id}` path route): `product-id-pattern="/product/([^/?#]+)"`.
+
+`product-id-param` reads a URL query-string parameter; `product-id-pattern` is a regex matched against the path (`location.pathname`) whose **first capture group** is the id, and is used when the param is absent or doesn't match. The id is resolved fresh on each send, so single-page client-side navigation between products is handled without a re-mount.
 
 ## Theming
 

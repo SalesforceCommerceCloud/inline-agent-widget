@@ -9,6 +9,8 @@ const OBSERVED = [
   "es-developer-name",
   "capabilities-version",
   "placeholder",
+  "product-id-param",
+  "product-id-pattern",
   "enable-logging",
   "persist-session",
 ] as const;
@@ -21,6 +23,8 @@ function readConfig(el: HTMLElement): WidgetConfig {
     esDeveloperName: attr("es-developer-name") ?? "",
     capabilitiesVersion: attr("capabilities-version"),
     placeholder: attr("placeholder"),
+    productIdParam: attr("product-id-param"),
+    productIdPattern: attr("product-id-pattern"),
     enableLogging: el.hasAttribute("enable-logging"),
     persistSession: el.hasAttribute("persist-session"),
   };
