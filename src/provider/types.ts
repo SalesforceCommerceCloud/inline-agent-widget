@@ -18,6 +18,22 @@ export interface WidgetConfig {
 
   /** Placeholder text for the message input. */
   placeholder?: string;
+
+  /**
+   * PDP product-context (never shown to the user). When set, the widget derives
+   * the current product id from the page URL and prepends
+   * `"Viewing product details for: <id>"` to the message SENT to the agent.
+   *
+   * `productIdParam` reads a URL query-string parameter (e.g. `"pid"` for the
+   * SFRA `Product-Show` controller). `productIdPattern` is a regex matched
+   * against the URL path whose first capture group is the id (e.g.
+   * `"/product/([^/?#]+)"` for PWA Kit path routes); it is used when
+   * `productIdParam` is absent or does not match. If neither resolves an id, the
+   * message is sent unprefixed. See `provider/product-context.ts`.
+   */
+  productIdParam?: string;
+  productIdPattern?: string;
+
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;
   /**

@@ -5,6 +5,7 @@ import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
+import { resolveProductId, withProductContext } from "./product-context";
 
 export function WidgetProvider({
   config,
@@ -30,8 +31,26 @@ export function WidgetProvider({
   // read the latest without re-registering.
   const persistenceRef = useRef<SessionPersistence | null>(null);
 
-  const { scrt2Url, orgId, esDeveloperName, capabilitiesVersion, enableLogging, persistSession } =
-    config;
+  const {
+    scrt2Url,
+    orgId,
+    esDeveloperName,
+    capabilitiesVersion,
+    enableLogging,
+    persistSession,
+    productIdParam,
+    productIdPattern,
+  } = config;
+
+  // The URL-based product-context config, held in a ref so the dependency-stable
+  // sendMessage callback (deps: []) reads the latest without being recreated —
+  // same rationale as hasUserSentRef / persistenceRef above. These fields do NOT
+  // affect the connection, so they are deliberately kept out of the client-
+  // building effect's deps (exactly like `placeholder`).
+  const productContextRef = useRef({ productIdParam, productIdPattern });
+  useEffect(() => {
+    productContextRef.current = { productIdParam, productIdPattern };
+  }, [productIdParam, productIdPattern]);
 
   // Create the client and register handlers whenever a connection-defining
   // attribute changes. In practice these are set once, before mount. NOTE: we
@@ -231,8 +250,17 @@ export function WidgetProvider({
     // Bail if the client was torn down (config change / unmount) mid-handshake.
     if (clientRef.current !== client) return false;
 
+    // Prepend the hidden product-context line (product id derived from the
+    // current URL) to the SENT body only. The input is already cleared and the
+    // widget never renders outgoing text, so this is invisible to the user.
+    // No-op off a PDP / when unconfigured (resolveProductId → null).
+    const productId =
+      typeof window !== "undefined"
+        ? resolveProductId(window.location, productContextRef.current)
+        : null;
+
     try {
-      await client.sendMessage(trimmed);
+      await client.sendMessage(withProductContext(trimmed, productId));
     } catch (err) {
       dispatch({
         type: "SET_ERROR",
