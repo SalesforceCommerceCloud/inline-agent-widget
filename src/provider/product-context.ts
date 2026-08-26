@@ -24,12 +24,21 @@ export interface ProductContextConfig {
 const CONTEXT_PREFIX = "Viewing product details for:";
 
 /**
- * Resolve the current product id from a location per the configured strategy:
- * `productIdParam` (query string) first, then `productIdPattern` (path regex,
- * capture group 1). Returns `null` when unconfigured, not found, or the pattern
- * is an invalid regex — callers then send the message unprefixed. Never throws.
+ * Built-in fallback strategies for SFCC storefronts, tried in order when no
+ * explicit productIdParam / productIdPattern is configured:
+ *  1. PWA — path segment after /product/ (e.g. /global/en-GB/product/25686544M?color=BLACKWL)
+ *  2. SFRA — last path segment before .html (e.g. /s/RefArch/name/25686544M.html)
  */
-export function resolveProductId(
+const DEFAULT_STRATEGIES: ProductContextConfig[] = [
+  { productIdPattern: "/product/([^/?#]+)" },
+  { productIdPattern: "/([^/]+)\\.html" },
+];
+
+/**
+ * Attempt to resolve a product id using a single strategy config.
+ * Returns the id or null.
+ */
+function tryResolve(
   loc: Pick<Location, "search" | "pathname">,
   cfg: ProductContextConfig,
 ): string | null {
@@ -47,11 +56,38 @@ export function resolveProductId(
   if (productIdPattern) {
     try {
       const captured = new RegExp(productIdPattern).exec(loc.pathname)?.[1]?.trim();
-      // decodeURIComponent can throw on a malformed %-escape; the catch handles it.
       if (captured) return decodeURIComponent(captured);
     } catch {
-      // Invalid regex or malformed escape — no id, send unprefixed.
+      // Invalid regex or malformed escape — no id.
     }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the current product id from a location per the configured strategy:
+ * `productIdParam` (query string) first, then `productIdPattern` (path regex,
+ * capture group 1). When neither is configured, falls back to built-in
+ * strategies for PWA (/product/<id>) and SFRA (/name.html) URL patterns.
+ * Returns `null` when not found or the pattern is invalid — callers then send
+ * the message unprefixed. Never throws.
+ */
+export function resolveProductId(
+  loc: Pick<Location, "search" | "pathname">,
+  cfg: ProductContextConfig,
+): string | null {
+  const { productIdParam, productIdPattern } = cfg;
+
+  const hasExplicitConfig = !!(productIdParam || productIdPattern);
+
+  if (hasExplicitConfig) {
+    return tryResolve(loc, cfg);
+  }
+
+  for (const strategy of DEFAULT_STRATEGIES) {
+    const id = tryResolve(loc, strategy);
+    if (id) return id;
   }
 
   return null;
