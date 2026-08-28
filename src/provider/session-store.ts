@@ -1,30 +1,34 @@
 /**
- * Opt-in persistence for an anonymous SCRT2 session so a conversation survives
- * page navigation / reload within the same browser.
+ * Persistence for an anonymous SCRT2 session so a conversation survives page
+ * navigation / reload within the same browser. Enabled by default; a host can
+ * opt out per embed (see `persistSession` in provider/types.ts).
  *
- * SECURITY (see the plan's security analysis): the persisted token is an
- * anonymous, unauthenticated JWT — its blast radius if stolen is the messaging
- * conversation only (no user credentials / CRM access). We nonetheless minimize
- * exposure:
- *   - store the MINIMUM (token + conversationId + lastEventId) — never any
- *     transcript text;
- *   - reuse is bounded solely by the token's own JWT `exp` (the server sets it
- *     at mint; we can't lengthen it, only honor it — a fresh token would be a
- *     new anonymous UID and 403 on the existing conversation anyway);
- *   - proactively delete an expired / malformed entry on load, so a dead token
- *     doesn't linger at a well-known key;
+ * SECURITY: the persisted token is an anonymous, unauthenticated JWT — its blast
+ * radius if stolen is the messaging conversation only (no user credentials / CRM
+ * access). We nonetheless minimize exposure:
+ *   - store the MINIMUM (token + conversationId + lastEventId, plus a
+ *     `persistedAt` timestamp) — never any transcript text;
+ *   - bound reuse by min(the token's own JWT `exp`, a 30-minute SLIDING idle
+ *     TTL). `saveSession` re-stamps `persistedAt` after every send, so an
+ *     actively used conversation keeps working while an abandoned one becomes
+ *     unrestorable 30 min after the last activity;
+ *   - proactively delete an expired / idle / malformed entry on load, so a dead
+ *     token doesn't linger at a well-known key;
  *   - degrade to a silent no-op when Storage is unavailable (private mode,
  *     disabled, quota) — the widget just behaves as if persistence were off.
  *
  * Backed by `localStorage` (a deliberate product choice for cross-tab + cross-
  * restart continuity; `sessionStorage` would be safer on shared devices — see
- * the README trade-off note). NOTE: with the idle max-age removed, a stored
- * session is reusable for the FULL token lifetime — on a shared/kiosk device
- * that widens the walk-up reuse window to the token's `exp`. The README calls
- * this out; prefer leaving persistence off for kiosk deployments.
+ * the README trade-off note). The 30-min idle TTL caps the shared/kiosk walk-up
+ * reuse window to 30 min of inactivity; for stricter kiosk use set
+ * `persist-session="false"` to disable persistence entirely.
  */
 
-/** The minimal session snapshot we persist. Contains NO message/transcript text. */
+/**
+ * The minimal session snapshot we persist. Contains NO message/transcript text.
+ * `saveSession` additionally stamps a `persistedAt` epoch-ms timestamp (used for
+ * the sliding idle TTL); it is intentionally not part of this caller-facing shape.
+ */
 export interface PersistedSession {
   accessToken: string;
   conversationId: string;
@@ -32,6 +36,13 @@ export interface PersistedSession {
 }
 
 const KEY_PREFIX = "iaw:sess";
+
+/**
+ * Sliding idle TTL for a persisted session (epoch-ms window): a stored session is
+ * restorable only within 30 minutes of its last write. `saveSession` re-stamps
+ * `persistedAt` after every send, so the window resets on each activity.
+ */
+const SESSION_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Namespaced storage key. Scoping by orgId + esDeveloperName keeps multiple
@@ -112,6 +123,8 @@ function isPersistedSession(value: unknown): value is PersistedSession {
  *   - `malformed`    : Entry present but not valid JSON.
  *   - `wrong-shape`  : Valid JSON but missing/!typed required fields.
  *   - `token-expired`: Well-formed session whose JWT `exp` has passed.
+ *   - `idle-expired` : Well-formed, unexpired token but idle past the 30-min TTL
+ *                      (or missing its `persistedAt` timestamp).
  */
 export type LoadRejectReason =
   | "no-storage"
@@ -119,14 +132,16 @@ export type LoadRejectReason =
   | "read-threw"
   | "malformed"
   | "wrong-shape"
-  | "token-expired";
+  | "token-expired"
+  | "idle-expired";
 
 /**
  * Load a persisted session, or null if none is usable. Returns null (and
- * proactively clears the entry) when the stored blob is malformed or the JWT
- * has expired. Reuse is bounded solely by the token's `exp`. `now` is
- * injectable for tests; `onReject` (optional) reports why a load failed for
- * diagnostics — it is never passed the token value.
+ * proactively clears the entry) when the stored blob is malformed, the JWT has
+ * expired, or it has been idle past the 30-min sliding TTL. Reuse is bounded by
+ * min(JWT `exp`, `persistedAt` + SESSION_TTL_MS). `now` is injectable for tests;
+ * `onReject` (optional) reports why a load failed for diagnostics — it is never
+ * passed the token value.
  */
 export function loadSession(
   key: string,
@@ -166,10 +181,21 @@ export function loadSession(
     return null;
   }
 
-  // The token's own JWT expiry is the sole reuse bound.
+  // The token's own JWT expiry is a hard upper bound on reuse.
   if (tokenExpiryMs(parsed.accessToken) <= now) {
     clearSession(key);
     onReject?.("token-expired");
+    return null;
+  }
+
+  // Sliding idle TTL: reusable only within SESSION_TTL_MS of the last write.
+  // saveSession stamps `persistedAt` (refreshed after every send). A blob with
+  // no/invalid `persistedAt` — e.g. written by a build before the TTL existed —
+  // is treated as stale. Net reuse bound = min(JWT exp, persistedAt + TTL).
+  const persistedAt = (parsed as { persistedAt?: unknown }).persistedAt;
+  if (typeof persistedAt !== "number" || now - persistedAt > SESSION_TTL_MS) {
+    clearSession(key);
+    onReject?.("idle-expired");
     return null;
   }
 
@@ -177,16 +203,21 @@ export function loadSession(
 }
 
 /**
- * Persist a session. Call after establishing the conversation (and, harmlessly,
- * after sends) so the latest token/lastEventId is stored. Silently no-ops if
- * storage is unavailable or the write throws (e.g. quota).
+ * Persist a session. Call after establishing the conversation and after each
+ * send, so the latest token/lastEventId is stored AND the sliding idle TTL is
+ * refreshed. Stamps `persistedAt` (epoch ms; `now` is injectable for tests).
+ * Silently no-ops if storage is unavailable or the write throws (e.g. quota).
  */
-export function saveSession(key: string, data: PersistedSession): void {
+export function saveSession(
+  key: string,
+  data: PersistedSession,
+  now: number = Date.now(),
+): void {
   const storage = getStorage();
   if (!storage) return;
 
   try {
-    storage.setItem(key, JSON.stringify(data));
+    storage.setItem(key, JSON.stringify({ ...data, persistedAt: now }));
   } catch {
     // Quota / disabled — persistence is best-effort; ignore.
   }

@@ -81,7 +81,7 @@ flowchart TB
 | **Delivery / entry** | `index.ts`, `custom-element.ts`, `mount.ts` | Register `<inline-agent-widget>` (side effect on import); or mount imperatively. Attach an open shadow root. |
 | **Rendering** | `render.tsx`, `App.tsx`, `styles.css` | Inject the stylesheet as a string into the shadow root (never `document.head`), mount a React 18 root, validate required config. |
 | **UI** | `components/InputBar.tsx`, `components/Response.tsx`, `components/Markdown.tsx` | Input with warm-on-typing + optimistic clear; single-answer response region (typing / streaming / answer / error); sanitized markdown. |
-| **State + orchestration** | `provider/WidgetProvider.tsx`, `context.ts`, `reducer.ts`, `types.ts`, `ensure-connected.ts`, `session-store.ts` | Own the client lifecycle, wire SDK events to a reducer, gate the agent's auto-greeting, run the lazy handshake once, and (optionally) persist the session. |
+| **State + orchestration** | `provider/WidgetProvider.tsx`, `context.ts`, `reducer.ts`, `types.ts`, `ensure-connected.ts`, `session-store.ts` | Own the client lifecycle, wire SDK events to a reducer, gate the agent's auto-greeting, run the lazy handshake once, and persist the session (on by default). |
 | **Transport (vendored SDK)** | `sdk/client.ts`, `sse.ts`, `event-emitter.ts`, `errors.ts`, `logger.ts`, `types.ts` | Anonymous token mint, conversation lifecycle, message send, fetch-based SSE with auto-reconnect + backoff, token-refresh on 401. |
 
 ---
@@ -110,7 +110,7 @@ src/
     reducer.ts          WidgetState reducer (status / answer / streamingText / agentTyping / error)
     types.ts            WidgetConfig, WidgetState, WidgetAction, WidgetContextValue
     ensure-connected.ts Run-once lazy handshake helper (restore-first, else fresh); React-free + unit-tested
-    session-store.ts    Opt-in localStorage persistence; JWT-exp bounded; shape/expiry validation
+    session-store.ts    localStorage persistence (on by default); min(JWT exp, 30-min sliding idle TTL); shape/expiry validation
 
   sdk/                  Vendored, trimmed SCRT2 (Agentforce MIAW) client — no external SDK dependency
     index.ts            Public SDK surface (AgentforceClient + errors + types)
@@ -167,8 +167,8 @@ sequenceDiagram
     IB->>WP: sendMessage(text)  (field cleared optimistically)
     WP->>WP: dispatch ASK_QUESTION (clear previous answer)
     WP->>EC: ensureConnected()  (joins the SAME in-flight handshake)
-    WP->>CL: sendMessage(text)
-    CL->>SF: POST …/conversation/{id}/message
+    WP->>CL: sendMessage(text, pdpContextVariables?)
+    CL->>SF: POST …/conversation/{id}/message (text unchanged + SessionContext)
     WP->>WP: hasUserSent = true  (now surface agent output)
     SF--)CL: SSE: CONVERSATION_TYPING_STARTED  ⇒ SET_AGENT_TYPING
     SF--)CL: SSE: CONVERSATION_STREAMING_TOKEN ×N ⇒ APPEND_STREAMING_TOKEN
@@ -177,6 +177,13 @@ sequenceDiagram
 ```
 
 Key guarantees:
+
+- **PDP context is per turn.** `WidgetProvider` resolves the current product id
+  immediately before each send and passes `page_context_type`,
+  `page_context_message`, and `page_context_data` through the SCRT2 v2
+  `SessionContextSet` envelope. The agent resets these external variables after
+  every response, so the widget resends them on each PDP follow-up. When no
+  product id resolves, `context` is omitted.
 
 - **Exactly one handshake.** `ensureConnected` keys readiness on
   `conversationId` and memoizes the in-flight promise, so a send fired before
@@ -192,13 +199,14 @@ Key guarantees:
 
 ---
 
-## 5. Runtime flow — session persistence (opt-in)
+## 5. Runtime flow — session persistence (on by default)
 
-With `persist-session`, the minimal session snapshot (`accessToken`,
-`conversationId`, `lastEventId` — **never transcript text**) is stored in
-`localStorage`, namespaced by `orgId + esDeveloperName`. On the next page load
-the widget rehydrates the *same* anonymous conversation instead of minting a new
-token.
+With persistence on (the default), the minimal session snapshot (`accessToken`,
+`conversationId`, `lastEventId`, plus an internal `persistedAt` timestamp —
+**never transcript text**) is stored in `localStorage`, namespaced by
+`orgId + esDeveloperName`. On the next page load the widget rehydrates the *same*
+anonymous conversation instead of minting a new token. Hosts opt out per embed
+with `persist-session="false"`.
 
 ```mermaid
 sequenceDiagram
@@ -208,10 +216,10 @@ sequenceDiagram
     participant CL as AgentforceClient
     participant SF as SCRT2 / MIAW
 
-    Note over WP: First send after reload (persist-session on)
+    Note over WP: First send after reload (persistence on — the default)
     WP->>EC: ensureConnected(client, persistence)
     EC->>PS: tryRestore()
-    PS->>PS: loadSession() — validate shape + JWT exp
+    PS->>PS: loadSession() — validate shape + JWT exp + 30-min idle TTL
 
     alt Valid stored session
         PS->>CL: restore({ token, conversationId, lastEventId })
@@ -225,11 +233,13 @@ sequenceDiagram
     end
 ```
 
-Reuse is bounded **solely by the token's own JWT `exp`** (set by the server at
-mint). An expired or malformed entry is refused and proactively cleared on load;
-the session is also cleared when the conversation ends or the SDK reports a
-non-recoverable `SESSION_EXPIRED`. See the README security note for the
-shared/kiosk-device trade-off.
+Reuse is bounded by **min(the token's own JWT `exp`, a 30-minute sliding idle
+TTL)** — the TTL resets on each message (`saveSession` re-stamps `persistedAt`
+after every send). An expired, idle-expired, or malformed entry is refused and
+proactively cleared on load; the session is also cleared when the conversation
+ends or the SDK reports a non-recoverable `SESSION_EXPIRED`. Set
+`persist-session="false"` to disable persistence on shared/kiosk devices. See the
+README security note for the trade-off.
 
 ---
 
@@ -306,7 +316,8 @@ the right artifact.
 - **Shadow DOM (`mode: open`)** is a **style** isolation boundary, not a JS
   security boundary.
 - **Sanitized markdown** — `rehype-sanitize`, no raw HTML.
-- **Persistence** stores the minimum, is bounded by token `exp`, and self-cleans;
-  prefer leaving it off on shared/kiosk devices.
+- **Persistence** (on by default) stores the minimum, is bounded by min(token
+  `exp`, a 30-min sliding idle TTL), and self-cleans; set `persist-session="false"`
+  on shared/kiosk devices.
 
 See the [README security section](../README.md#security) for the full treatment.

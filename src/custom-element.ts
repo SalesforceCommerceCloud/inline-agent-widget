@@ -17,6 +17,10 @@ const OBSERVED = [
 
 function readConfig(el: HTMLElement): WidgetConfig {
   const attr = (name: string) => el.getAttribute(name)?.trim() || undefined;
+  // Persistence defaults ON. Opt out per embed with persist-session="false";
+  // an absent attribute, the bare attribute, or any other value keeps it on.
+  const persistRaw = el.getAttribute("persist-session");
+  const persistSession = persistRaw === null ? true : persistRaw.trim().toLowerCase() !== "false";
   return {
     scrt2Url: attr("scrt2-url") ?? "",
     orgId: attr("org-id") ?? "",
@@ -26,7 +30,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
     productIdParam: attr("product-id-param"),
     productIdPattern: attr("product-id-pattern"),
     enableLogging: el.hasAttribute("enable-logging"),
-    persistSession: el.hasAttribute("persist-session"),
+    persistSession,
   };
 }
 

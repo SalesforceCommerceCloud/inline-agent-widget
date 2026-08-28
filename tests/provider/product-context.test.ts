@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveProductId, withProductContext } from "../../src/provider/product-context";
+import {
+  buildPdpInlineContext,
+  resolveProductId,
+} from "../../src/provider/product-context";
 
 describe("resolveProductId", () => {
   it("reads the id from the configured query-string param (SFRA Product-Show shape)", () => {
@@ -106,14 +109,42 @@ describe("resolveProductId", () => {
   });
 });
 
-describe("withProductContext", () => {
-  it("prepends the exact hidden line and a blank line before the query", () => {
-    expect(withProductContext("is this waterproof?", "25752986M")).toBe(
-      "Viewing product details for: 25752986M\n\nis this waterproof?",
-    );
+describe("buildPdpInlineContext", () => {
+  it("builds the three string variables expected by the pdp_inline agent", () => {
+    expect(buildPdpInlineContext("1050633A6D")).toEqual([
+      {
+        name: "page_context_type",
+        value: { valueType: "TextValue", textValue: "pdp_inline" },
+      },
+      {
+        name: "page_context_message",
+        value: {
+          valueType: "TextValue",
+          textValue: "This is the product details page the user is currently looking at",
+        },
+      },
+      {
+        name: "page_context_data",
+        value: {
+          valueType: "TextValue",
+          textValue: '{"id":"1050633A6D"}',
+        },
+      },
+    ]);
   });
 
-  it("returns the text unchanged when there is no product id", () => {
-    expect(withProductContext("hello", null)).toBe("hello");
+  it("JSON-encodes product ids instead of interpolating unsafe JSON", () => {
+    const productId = 'sku"\\\nnext';
+    const context = buildPdpInlineContext(productId);
+
+    expect(JSON.parse(context[2].value.textValue)).toEqual({ id: productId });
+  });
+
+  it("uses the latest product id when context is rebuilt after navigation", () => {
+    const first = buildPdpInlineContext("PRODUCT-A");
+    const second = buildPdpInlineContext("PRODUCT-B");
+
+    expect(first[2].value.textValue).toBe('{"id":"PRODUCT-A"}');
+    expect(second[2].value.textValue).toBe('{"id":"PRODUCT-B"}');
   });
 });

@@ -13,23 +13,24 @@ export interface WidgetConfig {
   orgId: string;
   /** Embedded Service developer name. */
   esDeveloperName: string;
-  /** Capabilities version sent with the token request (default: "1"). */
+  /** Capabilities version sent with the token request (default: "66"). */
   capabilitiesVersion?: string;
 
   /** Placeholder text for the message input. */
   placeholder?: string;
 
   /**
-   * PDP product-context (never shown to the user). When set, the widget derives
-   * the current product id from the page URL and prepends
-   * `"Viewing product details for: <id>"` to the message SENT to the agent.
+   * PDP product-context (never shown to the user). The widget derives the
+   * current product id from the page URL and attaches the agent's `pdp_inline`
+   * external variables to each SCRT2 Send Message request. Shopper text is sent
+   * unchanged.
    *
    * `productIdParam` reads a URL query-string parameter (e.g. `"pid"` for the
    * SFRA `Product-Show` controller). `productIdPattern` is a regex matched
    * against the URL path whose first capture group is the id (e.g.
    * `"/product/([^/?#]+)"` for PWA Kit path routes); it is used when
    * `productIdParam` is absent or does not match. If neither resolves an id, the
-   * message is sent unprefixed. See `provider/product-context.ts`.
+   * message is sent without PDP context. See `provider/product-context.ts`.
    */
   productIdParam?: string;
   productIdPattern?: string;
@@ -39,15 +40,16 @@ export interface WidgetConfig {
   /**
    * Persist the anonymous session (token + conversationId) in `localStorage` so
    * a conversation survives page navigation / reload / browser restart within
-   * the same browser. Default **false** (a fresh session per page load).
+   * the same browser. Default **true**; set to `false` to opt out (custom
+   * element: `persist-session="false"`), e.g. on shared/kiosk devices.
    *
-   * Reuse is bounded solely by the token's own JWT `exp` (the server sets it at
-   * mint; typically ~hours). SECURITY: the token is anonymous/unauthenticated
-   * (blast radius = the messaging conversation only), but `localStorage` is
-   * script-readable and shared across tabs + restarts, so a stored session is
-   * reusable for the full token lifetime — on a shared/kiosk device a walk-up
-   * user could resume the conversation until the token expires. Prefer leaving
-   * this off for shared/kiosk devices. See README.
+   * Reuse is bounded by min(the token's own JWT `exp`, a 30-minute SLIDING idle
+   * TTL that resets on each message). SECURITY: the token is anonymous/
+   * unauthenticated (blast radius = the messaging conversation only), but
+   * `localStorage` is script-readable and shared across tabs + restarts, so a
+   * stored session is resumable until it goes idle for 30 min (or the token
+   * expires) — on a shared/kiosk device a walk-up user could resume the
+   * conversation within that window. Opt out there. See README.
    */
   persistSession?: boolean;
 }

@@ -63,7 +63,7 @@ describe("connect()", () => {
     expect(bodyOf(tokenCall)).toMatchObject({
       orgId: TEST_ORG_ID,
       esDeveloperName: TEST_ES_NAME,
-      capabilitiesVersion: "1",
+      capabilitiesVersion: "66",
       platform: "Web",
     });
 
@@ -205,6 +205,89 @@ describe("conversation lifecycle request bodies", () => {
       messageType: "StaticContentMessage",
       staticContent: { formatType: "Text", text: "Hello there" },
     });
+    expect(body).not.toHaveProperty("context");
+
+    client.disconnect();
+  });
+
+  it("sendMessage wraps context variables in the SCRT2 v2 SessionContext envelope", async () => {
+    const { client } = await connectClient();
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+
+    await client.sendMessage("Is this waterproof?", [
+      {
+        name: "page_context_type",
+        value: { valueType: "TextValue", textValue: "pdp_inline" },
+      },
+      {
+        name: "page_context_message",
+        value: {
+          valueType: "TextValue",
+          textValue: "This is the product details page the user is currently looking at",
+        },
+      },
+      {
+        name: "page_context_data",
+        value: { valueType: "TextValue", textValue: '{"id":"1050633A6D"}' },
+      },
+    ]);
+
+    const call = findCall((url, init) => url.includes("/message") && init?.method === "POST");
+    expect(bodyOf(call)).toEqual({
+      message: {
+        id: expect.any(String),
+        messageType: "StaticContentMessage",
+        staticContent: {
+          formatType: "Text",
+          text: "Is this waterproof?",
+        },
+      },
+      esDeveloperName: TEST_ES_NAME,
+      context: [
+        {
+          entryType: "SessionContext",
+          id: expect.any(String),
+          sessionContext: {
+            contextType: "SessionContextSet",
+            contextVariables: [
+              {
+                name: "page_context_type",
+                value: { valueType: "TextValue", textValue: "pdp_inline" },
+              },
+              {
+                name: "page_context_message",
+                value: {
+                  valueType: "TextValue",
+                  textValue:
+                    "This is the product details page the user is currently looking at",
+                },
+              },
+              {
+                name: "page_context_data",
+                value: {
+                  valueType: "TextValue",
+                  textValue: '{"id":"1050633A6D"}',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    client.disconnect();
+  });
+
+  it("sendMessage omits the context envelope for an empty variable list", async () => {
+    const { client } = await connectClient();
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+
+    await client.sendMessage("Hello there", []);
+
+    const call = findCall((url, init) => url.includes("/message") && init?.method === "POST");
+    expect(bodyOf(call)).not.toHaveProperty("context");
 
     client.disconnect();
   });
