@@ -75,13 +75,15 @@ export interface WidgetState {
   streamingText: string;
   agentTyping: boolean;
   error: string | null;
+  /** The shopper's last question, displayed as a bubble above the answer. */
+  lastQuestion: string | null;
 }
 
 export type WidgetAction =
   | { type: "SET_STATUS"; status: ConnectionStatus }
   // The user asked a new question — clear the previous response and show that
   // the agent is working on the next one.
-  | { type: "ASK_QUESTION" }
+  | { type: "ASK_QUESTION"; question: string }
   | { type: "APPEND_STREAMING_TOKEN"; token: string }
   // The final, authoritative answer content for the current question.
   | { type: "SET_ANSWER"; content: string }

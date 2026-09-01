@@ -2,13 +2,12 @@ import { extractMessageText, extractTokenText } from "../tokens";
 import type { WidgetAction, WidgetState } from "./types";
 
 export const initialWidgetState: WidgetState = {
-  // Start idle: the widget is mounted and ready to accept input, but the
-  // network handshake is deferred until the user's first message.
   status: "idle",
   answer: null,
   streamingText: "",
   agentTyping: false,
   error: null,
+  lastQuestion: null,
 };
 
 export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetState {
@@ -24,9 +23,13 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
       };
 
     case "ASK_QUESTION":
-      // A new question replaces the previous answer. Drop the old response and
-      // any leftover streaming buffer so only the current exchange is shown.
-      return { ...state, answer: null, streamingText: "", error: null };
+      return {
+        ...state,
+        answer: null,
+        streamingText: "",
+        error: null,
+        lastQuestion: action.question,
+      };
 
     case "APPEND_STREAMING_TOKEN":
       return {

@@ -8,14 +8,16 @@
 
 :host {
   --iaw-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --iaw-bg: #ffffff;
-  --iaw-fg: #1a1a1a;
-  --iaw-border: #e2e2e6;
+  --iaw-bg: #fafafa;
+  --iaw-fg: #3f3f46;
+  --iaw-border: #e5e5e5;
   --iaw-radius: 12px;
-  --iaw-accent: #0b5cff;
+  --iaw-accent: #131315;
   --iaw-accent-fg: #ffffff;
   --iaw-muted: #6b7280;
   --iaw-error: #b42318;
+  --iaw-query-bg: #dbeafe;
+  --iaw-answer-bg: #ffffff;
   --iaw-max-height: 480px;
   --iaw-max-width: 100%;
 
@@ -32,24 +34,178 @@
   box-sizing: border-box;
 }
 
-/*
- * Single-answer layout: an input row on top and, below it, the response to the
- * most recent question. The widget sizes to its content — when there's no
- * answer yet, it's just the input row.
- */
+/* ── Container ── */
 .widget {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  padding: 16px;
   background: var(--iaw-bg);
   border: 1px solid var(--iaw-border);
   border-radius: var(--iaw-radius);
-  overflow: hidden;
 }
 
-/* The response region — sits outside/below the input. */
-.response {
-  padding: 16px;
-  border-top: 1px solid var(--iaw-border);
+/* ── Header: sparkle + "Ask Assistant" + New badge ── */
+.widget-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.widget-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--iaw-accent);
+  color: var(--iaw-accent-fg);
+  flex-shrink: 0;
+}
+
+.header-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.widget-header-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--iaw-fg);
+}
+
+.widget-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  border-radius: 9999px;
+}
+
+/* ── Composer: textarea + send icon ── */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  background: var(--iaw-answer-bg);
+  border: 1px solid var(--iaw-border);
+  border-radius: var(--iaw-radius);
+  transition: border-color 0.15s ease;
+}
+
+.composer:focus-within {
+  border-color: var(--iaw-accent);
+}
+
+.composer-input {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  padding: 4px 0 4px 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--iaw-fg);
+  resize: none;
+  overflow-y: auto;
+  max-height: 88px;
+  scrollbar-width: thin;
+}
+
+.composer-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.composer-input:placeholder-shown {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-send {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--iaw-accent);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+
+.composer-send:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.composer-send:disabled {
+  color: rgba(23, 23, 27, 0.35);
+  cursor: not-allowed;
+}
+
+.composer-send:focus-visible {
+  outline: 2px solid var(--iaw-accent);
+  outline-offset: 2px;
+}
+
+/* ── Conversation slot: query bubble + answer card ── */
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.query {
+  align-self: flex-end;
+  max-width: 80%;
+  margin: 0;
+  padding: 12px 20px;
+  background: var(--iaw-query-bg);
+  border-radius: var(--iaw-radius);
+  color: var(--iaw-fg);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+  background: var(--iaw-answer-bg);
+  border: 1px solid var(--iaw-border);
+  border-radius: var(--iaw-radius);
   font-size: 14px;
   line-height: 1.5;
   max-height: var(--iaw-max-height);
@@ -95,10 +251,10 @@
 .error {
   color: var(--iaw-error);
   font-size: 13px;
-  padding: 4px 2px;
+  margin: 0;
 }
 
-/* Markdown content */
+/* ── Markdown content ── */
 .md > :first-child {
   margin-top: 0;
 }
@@ -193,53 +349,6 @@
   height: auto;
 }
 
-/* Input bar — the primary control, on top. */
-.input-bar {
-  display: flex;
-  gap: 8px;
-  padding: 12px;
-  background: var(--iaw-bg);
-}
-
-.input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 9px 12px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--iaw-fg);
-  background: var(--iaw-bg);
-  border: 1px solid var(--iaw-border);
-  border-radius: 999px;
-  outline: none;
-}
-
-.input:focus {
-  border-color: var(--iaw-accent);
-}
-
-.input:disabled {
-  opacity: 0.6;
-}
-
-.send {
-  flex: 0 0 auto;
-  padding: 9px 18px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--iaw-accent-fg);
-  background: var(--iaw-accent);
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* Config / fatal error fallback (rendered without React) */
 .iaw-config-error {
   padding: 12px 14px;
@@ -247,6 +356,5 @@
   font-size: 13px;
   color: var(--iaw-error);
   border: 1px solid var(--iaw-border);
-  border-radius: var(--iaw-radius);
   background: var(--iaw-bg);
 }
