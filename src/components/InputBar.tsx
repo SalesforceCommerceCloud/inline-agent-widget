@@ -1,48 +1,69 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useState,
+  useRef,
+  useLayoutEffect,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useWidget } from "../provider/context";
+import { SendIcon } from "./icons";
 
 export function InputBar() {
-  const { sendMessage, prepareConnection, config } = useWidget();
+  const { sendMessage, prepareConnection, config, state } = useWidget();
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const busy = state.agentTyping || state.streamingText.length > 0;
 
-  // Warm up the connection as soon as the user starts typing, so the token/SSE/
-  // conversation handshake runs behind their typing time. prepareConnection is
-  // idempotent and non-blocking, so calling it on every change is fine — it only
-  // does work on the first call.
-  const onChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
     if (e.target.value.length > 0) prepareConnection();
   };
 
-  // The input is never disabled for connection state. If the handshake hasn't
-  // finished yet, sendMessage queues the message onto the in-flight attempt and
-  // fires it once ready — so the user is never blocked from typing or sending.
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (text.trim().length === 0) return;
-    // Fire-and-forget: clear the field optimistically. sendMessage handles the
-    // queue/handshake and dispatches any error itself.
+    if (text.trim().length === 0 || busy) return;
     void sendMessage(text);
     setText("");
   };
 
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (busy) return;
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    if (e.shiftKey) return;
+    e.preventDefault();
+    if (text.trim().length === 0) return;
+    void sendMessage(text);
+    setText("");
+  };
+
+  useLayoutEffect(() => {
+    const field = textareaRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [text]);
+
   return (
-    <form className="input-bar" onSubmit={onSubmit}>
-      <input
-        className="input"
-        type="text"
+    <form className="composer" onSubmit={onSubmit}>
+      <textarea
+        ref={textareaRef}
+        className="composer-input"
+        rows={1}
         value={text}
         onChange={onChange}
-        placeholder={config.placeholder ?? "Type a message…"}
-        aria-label="Message input"
+        onKeyDown={onKeyDown}
+        placeholder={config.placeholder ?? "Ask me anything"}
+        aria-label="Ask a question"
+        disabled={busy}
       />
       <button
-        className="send"
+        className="composer-send"
         type="submit"
-        disabled={text.trim().length === 0}
-        aria-label="Send message"
+        disabled={text.trim().length === 0 || busy}
+        aria-label="Send question"
       >
-        Send
+        <SendIcon />
       </button>
     </form>
   );

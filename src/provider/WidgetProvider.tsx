@@ -224,7 +224,7 @@ export function WidgetProvider({
 
     // Clear the previous answer immediately so the UI reacts to the send even if
     // the handshake is still warming up (the message is effectively queued).
-    dispatch({ type: "ASK_QUESTION" });
+    dispatch({ type: "ASK_QUESTION", question: trimmed });
 
     // Ensure the session is live before sending. If the user hit Send before the
     // warm-up finished, this awaits the SAME in-flight handshake (the queue);
