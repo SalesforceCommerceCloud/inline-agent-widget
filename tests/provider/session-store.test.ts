@@ -59,7 +59,7 @@ describe("session-store", () => {
   });
 
   it("round-trips a saved session", () => {
-    saveSession(KEY, validData());
+    saveSession(KEY, validData(), NOW);
     const loaded = loadSession(KEY, NOW);
     expect(loaded).toMatchObject({
       conversationId: "conv-abc",
@@ -78,7 +78,7 @@ describe("session-store", () => {
     const token = jwtWithExp(FAR_FUTURE_EXP, forcesUrlChars);
     const seg = token.split(".")[1];
     expect(/[-_]/.test(seg)).toBe(true); // guard: the fixture really exercises the path
-    saveSession(KEY, { ...validData(), accessToken: token });
+    saveSession(KEY, { ...validData(), accessToken: token }, NOW);
     expect(loadSession(KEY, NOW)).not.toBeNull();
   });
 
@@ -87,20 +87,39 @@ describe("session-store", () => {
     expect(buildSessionKey("orgA", "AgentX")).not.toBe(buildSessionKey("orgB", "AgentX"));
   });
 
-  it("persists NO transcript/message text — only the minimal fields", () => {
-    saveSession(KEY, validData());
+  it("persists NO transcript/message text — only the minimal fields (+ persistedAt)", () => {
+    saveSession(KEY, validData(), NOW);
     const raw = localStorage.getItem(KEY)!;
     const parsed = JSON.parse(raw);
+    // Only the minimal session fields plus the idle-TTL timestamp — no transcript.
     expect(Object.keys(parsed).sort()).toEqual(
-      ["accessToken", "conversationId", "lastEventId"].sort(),
+      ["accessToken", "conversationId", "lastEventId", "persistedAt"].sort(),
     );
+    expect(parsed.persistedAt).toBe(NOW);
   });
 
-  it("reuse is bounded by the token's JWT exp — no idle cap rejects an unexpired token", () => {
-    saveSession(KEY, validData()); // token exp = NOW + 3600s (1h)
-    // 50 min later: far past the old 5-min idle cap (which would have rejected),
-    // but still before the token's exp → loads. Proves reuse is exp-bound only.
-    expect(loadSession(KEY, NOW + 3_000_000)).not.toBeNull();
+  it("reuses a session within the 30-min sliding idle TTL", () => {
+    saveSession(KEY, validData(), NOW); // persistedAt = NOW, token exp = NOW + 1h
+    // 29 minutes later: within the idle window and before the token exp → loads.
+    expect(loadSession(KEY, NOW + 29 * 60 * 1000)).not.toBeNull();
+  });
+
+  it("rejects (and clears) a session idle past the 30-min TTL, reason 'idle-expired'", () => {
+    saveSession(KEY, validData(), NOW); // token exp is 1h out, so exp is NOT the cause
+    const reasons: string[] = [];
+    // 31 minutes later: token still unexpired, but idle past 30 min → rejected.
+    const loaded = loadSession(KEY, NOW + 31 * 60 * 1000, (r) => reasons.push(r));
+    expect(loaded).toBeNull();
+    expect(reasons).toEqual(["idle-expired"]);
+    expect(localStorage.getItem(KEY)).toBeNull(); // proactively cleared
+  });
+
+  it("slides the idle window forward on each save", () => {
+    saveSession(KEY, validData(), NOW);
+    // A save 20 min later re-stamps persistedAt, extending the window.
+    saveSession(KEY, validData(), NOW + 20 * 60 * 1000);
+    // 45 min from the ORIGINAL save (25 min from the latest) → still within TTL.
+    expect(loadSession(KEY, NOW + 45 * 60 * 1000)).not.toBeNull();
   });
 
   it("rejects (and clears) a session whose JWT has expired", () => {
@@ -111,11 +130,19 @@ describe("session-store", () => {
     expect(localStorage.getItem(KEY)).toBeNull(); // proactively cleared
   });
 
-  it("tolerates a legacy blob carrying an extra persistedAt field", () => {
-    // A session written by an older build (with the idle-TTL) must still load;
-    // isPersistedSession ignores the extra property.
+  it("loads a well-formed blob whose persistedAt is within the TTL", () => {
+    // Direct blob (not via saveSession): a fresh persistedAt within the window loads.
     localStorage.setItem(KEY, JSON.stringify({ ...validData(), persistedAt: NOW }));
     expect(loadSession(KEY, NOW)).not.toBeNull();
+  });
+
+  it("rejects (and clears) a blob with no persistedAt as 'idle-expired'", () => {
+    // e.g. written by a build predating the idle TTL — treated as stale.
+    localStorage.setItem(KEY, JSON.stringify(validData())); // no persistedAt
+    const reasons: string[] = [];
+    expect(loadSession(KEY, NOW, (r) => reasons.push(r))).toBeNull();
+    expect(reasons).toEqual(["idle-expired"]);
+    expect(localStorage.getItem(KEY)).toBeNull();
   });
 
   it("returns null for a missing key", () => {

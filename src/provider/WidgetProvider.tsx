@@ -5,7 +5,7 @@ import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
-import { resolveProductId, withProductContext } from "./product-context";
+import { buildPdpInlineContext, resolveProductId } from "./product-context";
 
 export function WidgetProvider({
   config,
@@ -77,12 +77,13 @@ export function WidgetProvider({
     hasUserSentRef.current = false;
     connectPromiseRef.current = null;
 
-    // Build the session-persistence adapter (or null when the feature is off).
-    // The key is namespaced by orgId + esDeveloperName so widgets/configs don't
-    // collide. tryRestore/save translate between the store and the client;
-    // both must never throw (ensureConnected relies on that).
+    // Build the session-persistence adapter. Persistence is ON by default; it is
+    // null only when a host explicitly opts out (persistSession === false, e.g.
+    // persist-session="false"). The key is namespaced by orgId + esDeveloperName
+    // so widgets/configs don't collide. tryRestore/save translate between the
+    // store and the client; both must never throw (ensureConnected relies on that).
     const sessionKey = buildSessionKey(orgId, esDeveloperName);
-    const persistence: SessionPersistence | null = persistSession
+    const persistence: SessionPersistence | null = persistSession !== false
       ? {
           async tryRestore() {
             let rejectReason = "";
@@ -250,17 +251,20 @@ export function WidgetProvider({
     // Bail if the client was torn down (config change / unmount) mid-handshake.
     if (clientRef.current !== client) return false;
 
-    // Prepend the hidden product-context line (product id derived from the
-    // current URL) to the SENT body only. The input is already cleared and the
-    // widget never renders outgoing text, so this is invisible to the user.
-    // No-op off a PDP / when unconfigured (resolveProductId → null).
+    // Resolve the product id from the current URL immediately before each send.
+    // The agent resets these external variables after every turn, so PDP context
+    // must be attached to every applicable message. Off a PDP, context is
+    // omitted and the widget retains its general-chat behavior.
     const productId =
       typeof window !== "undefined"
         ? resolveProductId(window.location, productContextRef.current)
         : null;
 
     try {
-      await client.sendMessage(withProductContext(trimmed, productId));
+      await client.sendMessage(
+        trimmed,
+        productId ? buildPdpInlineContext(productId) : undefined,
+      );
     } catch (err) {
       dispatch({
         type: "SET_ERROR",

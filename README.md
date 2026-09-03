@@ -80,12 +80,12 @@ If `elementId` isn't in the DOM yet, `mount()` waits for it via a `MutationObser
 | `scrt2-url` | ✅ | SCRT2 instance base URL, e.g. `https://xyz.salesforce-scrt.com`. |
 | `org-id` | ✅ | Salesforce Organization ID. |
 | `es-developer-name` | ✅ | Embedded Service deployment developer name. |
-| `capabilities-version` | | Capabilities version sent with the token request (default `1`). |
+| `capabilities-version` | | Capabilities version sent with the token request (default `66`, required for custom session context). |
 | `placeholder` | | Placeholder text for the input (default `Type a message…`). |
 | `product-id-param` | | PDP product context (never shown). Query-string parameter to read the product id from, e.g. `pid`. See [Product context (PDP)](#product-context-pdp). |
 | `product-id-pattern` | | PDP product context (never shown). Regex matched against the URL path; capture group 1 is the product id, e.g. `/product/([^/?#]+)`. See [Product context (PDP)](#product-context-pdp). |
 | `enable-logging` | | Present ⇒ enables `[Agentforce]` debug logging in the console. |
-| `persist-session` | | Present ⇒ persist the anonymous session so the conversation survives page navigation / reload / restart (default **off**), until the token's own JWT `exp`. **Read the security note below before enabling.** |
+| `persist-session` | | Persist the anonymous session so the conversation survives page navigation / reload / restart. **On by default**; set `persist-session="false"` to opt out. Reuse is bounded by a 30-min sliding idle TTL and the token's JWT `exp`. **Read the security note below.** |
 
 These three required values are the same **non-secret** identifiers Salesforce's own embedded messaging snippet uses for anonymous sessions. Connection attributes are read at mount; treat them as set-once.
 
@@ -93,15 +93,49 @@ The `mount()` API takes the camelCase equivalents (`scrt2Url`, `orgId`, `esDevel
 
 ## Product context (PDP)
 
-When the widget sits on a Product Detail Page, it can automatically tell the agent which product the shopper is looking at — so they can ask "is this waterproof?" without naming it. Set one of the URL-extraction attributes and, on every send, the widget derives the product id from the page URL and prepends a single line to the message **sent** to the agent:
+When the widget sits on a Product Detail Page, it can automatically tell the agent which product the shopper is looking at — so they can ask "is this waterproof?" without naming it. On every send, the widget derives the product id from the page URL and passes the three external `pdp_inline` variables through the SCRT2 v2 session-context API. The shopper's message text is sent unchanged.
 
-```text
-Viewing product details for: <productId>
-
-<the shopper's message>
+```json
+{
+  "message": {
+    "id": "<message-uuid>",
+    "messageType": "StaticContentMessage",
+    "staticContent": { "formatType": "Text", "text": "Is this waterproof?" }
+  },
+  "esDeveloperName": "<deployment-developer-name>",
+  "context": [
+    {
+      "entryType": "SessionContext",
+      "id": "<context-uuid>",
+      "sessionContext": {
+        "contextType": "SessionContextSet",
+        "contextVariables": [
+          {
+            "name": "page_context_type",
+            "value": { "valueType": "TextValue", "textValue": "pdp_inline" }
+          },
+          {
+            "name": "page_context_message",
+            "value": {
+              "valueType": "TextValue",
+              "textValue": "This is the product details page the user is currently looking at"
+            }
+          },
+          {
+            "name": "page_context_data",
+            "value": {
+              "valueType": "TextValue",
+              "textValue": "{\"id\":\"1050633A6D\"}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
 ```
 
-That line is **never shown in the widget UI** — the widget has no transcript and never renders the outgoing text, so it travels only in the request body. If no id can be resolved (neither attribute set, no match on the current URL, or not on a PDP), the message is sent unchanged.
+All three values are sent as `TextValue`; `page_context_data` is a JSON string because the agent declares it as an external string variable. The agent clears this page context after every turn, so the widget resends it with every message while the shopper remains on the PDP. If no id can be resolved, the `context` property is omitted.
 
 - **SFRA** (`Product-Show?pid=…`): `product-id-param="pid"`.
 - **PWA Kit** (`/product/{id}` path route): `product-id-pattern="/product/([^/?#]+)"`.
@@ -140,18 +174,18 @@ Agent output is rendered with `react-markdown` + `remark-gfm` + **`rehype-saniti
 
 ### Session persistence (`persist-session`)
 
-By default the session lives **only in memory**, so each full page load starts a fresh anonymous conversation. Enabling `persist-session` stores the session in **`localStorage`** so the conversation continues across page navigation, reload, and browser restart (and is shared across tabs of the same origin).
+Session persistence is **on by default**: the session is stored in **`localStorage`** so the conversation continues across page navigation, reload, and browser restart (and is shared across tabs of the same origin). Set `persist-session="false"` (or `persistSession: false` via `mount()`) to opt out, in which case the session lives only in memory and each full page load starts a fresh anonymous conversation.
 
 What's stored is the **minimum**: the access token, the conversation id, and the last SSE event id — **never any message/transcript text**. The token is **anonymous and unauthenticated** (the same class of credential the page already sends on every request), so if it leaks the blast radius is *this messaging conversation only* — it grants no access to a Salesforce login, CRM data, or any account.
 
-Reuse is bounded by the token's **own JWT `exp`** (set by the server at mint, typically a few hours): a stored session is rehydrated only while its token is unexpired, and once expired it can't be reused (a fresh token is a new anonymous UID and would 403 on the existing conversation).
+Reuse is bounded by **min(the token's own JWT `exp`, a 30-minute sliding idle TTL)**. The idle TTL resets on every message (the widget re-stamps the stored entry after each send), so an active conversation keeps working, while an abandoned one becomes unrestorable 30 minutes after the last activity. Independently, once the token's `exp` passes the session can't be reused (a fresh token is a new anonymous UID and would 403 on the existing conversation).
 
 Mitigations that are always on when persistence is enabled:
 
-- **Token-expiry bound**: `loadSession` refuses and clears a stored session whose JWT `exp` has passed, so a dead token is never reused and doesn't linger at a well-known key.
-- **Minimal, self-cleaning storage**: only the token + conversation id + last event id are stored (never transcript text); an expired / malformed entry is proactively removed on load, and the session is cleared when the conversation ends or the SDK reports a non-recoverable `SESSION_EXPIRED`.
+- **30-min sliding idle TTL + token-expiry bound**: `loadSession` refuses and clears a stored session that has been idle past 30 minutes *or* whose JWT `exp` has passed, so a stale / dead token is never reused and doesn't linger at a well-known key.
+- **Minimal, self-cleaning storage**: only the token + conversation id + last event id (plus an internal `persistedAt` timestamp for the idle TTL) are stored — **never transcript text**; an expired / idle / malformed entry is proactively removed on load, and the session is cleared when the conversation ends or the SDK reports a non-recoverable `SESSION_EXPIRED`.
 
-**Residual risk — read before enabling on shared/kiosk devices.** `localStorage` is readable by any same-origin script (so an XSS or a compromised analytics/tag script on the host page could exfiltrate the token), and it persists across users of the same machine and is shared across tabs. Because reuse is bounded only by the token's `exp`, a stored session is resumable **for the full token lifetime** (potentially hours) — so on a **shared or public computer**, a walk-up user could resume the previous user's conversation until the token expires. For those deployments, prefer leaving `persist-session` **off**. (A per-tab, cleared-on-close `sessionStorage` variant would remove the shared-machine and cross-tab exposure at the cost of cross-tab/restart continuity — file an issue if you need it.) Note the shadow root is `mode: "open"`, which is a style-isolation boundary, **not** a JavaScript security boundary.
+**Residual risk — read before deploying on shared/kiosk devices.** Persistence is on by default. `localStorage` is readable by any same-origin script (so an XSS or a compromised analytics/tag script on the host page could exfiltrate the token), and it persists across users of the same machine and is shared across tabs. A stored session is resumable within the **30-minute sliding idle window** (and never past the token's `exp`) — so on a **shared or public computer**, a walk-up user could resume the previous user's conversation until it has been idle for 30 minutes. For those deployments, set `persist-session="false"` to keep the session in memory only. (A per-tab, cleared-on-close `sessionStorage` variant would remove the shared-machine and cross-tab exposure at the cost of cross-tab/restart continuity — file an issue if you need it.) Note the shadow root is `mode: "open"`, which is a style-isolation boundary, **not** a JavaScript security boundary.
 
 ## How it works
 
@@ -161,7 +195,7 @@ Mitigations that are always on when persistence is enabled:
 - **The session is established lazily on the first send** — nothing hits the network on mount. When the user sends their first message it opens an anonymous SCRT2 session: `POST …/access-token` → open the SSE stream (`GET /eventrouter/v1/sse` with `Authorization` + `X-Org-Id`) → `POST …/conversation`, then sends the message. Later messages reuse the live session.
 - Asking a question clears the previous answer and `POST`s a `StaticContentMessage`. The agent's reply arrives as `CONVERSATION_STREAMING_TOKEN` events (rendered live in the response region) and a final `CONVERSATION_MESSAGE` event whose content is authoritative and replaces the streamed preview.
 - If the SSE stream drops, it auto-reconnects with exponential backoff, reusing the token. Once the token expires it emits a non-recoverable `SESSION_EXPIRED` error; call `connect()` again (re-mount) to start a fresh session.
-- With `persist-session` on, the first send instead tries to **rehydrate** a stored session — `client.restore()` re-opens the SSE stream with the saved token and adopts the saved conversation id, skipping the token mint and conversation creation entirely (same anonymous UID → same conversation). A returning user sees no fresh greeting because the conversation already exists. If nothing valid is stored, it falls back to the normal fresh handshake and persists the result.
+- With persistence on (the default), the first send instead tries to **rehydrate** a stored session — `client.restore()` re-opens the SSE stream with the saved token and adopts the saved conversation id, skipping the token mint and conversation creation entirely (same anonymous UID → same conversation). A returning user sees no fresh greeting because the conversation already exists. If nothing valid is stored (or it's expired / idle past the 30-min TTL), it falls back to the normal fresh handshake and persists the result.
 
 ## Development
 

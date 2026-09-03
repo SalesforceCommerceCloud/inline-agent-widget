@@ -38,6 +38,11 @@
         placeholder attributes with your real Salesforce SCRT2 (Agentforce MIAW) values in
         <code>demo/index.html</code>, then reload.
       </p>
+      <p>
+        Demo PDP product context: <code>YOUR_PRODUCT_ID</code> — replace it in
+        <code>demo/index.html</code> (both here and the injected <code>pid</code>
+        below) to exercise the PDP flow.
+      </p>
 
       <!--
         Custom-element usage. On any page that has loaded the bundle, this tag
@@ -60,18 +65,29 @@
         first send until you fill them in (open the browser console; the
         `enable-logging` attribute traces the token → SSE → conversation handshake).
 
-        `persist-session` turns on localStorage-backed persistence so the
-        conversation survives reload / navigation. A stored session is reused
-        until the token's own JWT `exp` (set by the server at mint); an expired
-        token is refused and re-minted. With `enable-logging`, reload+send logs
-        "Restoring session for conversation …" (no token mint) on a hit, or
-        "persist: no restorable session …" before a fresh handshake.
+        `capabilities-version` is omitted here, so it defaults to 66 — the version
+        that carries custom PDP session context; add the attribute with a lower
+        value only if your org's SCRT2 instance rejects 66. `product-id-param="pid"`
+        plus the injected `pid` below demonstrate PDP product context with a
+        PLACEHOLDER id (`YOUR_PRODUCT_ID`); swap in a real product id to see the
+        agent receive it.
+
+        Session persistence is ON by default (localStorage-backed), so the
+        conversation survives reload / navigation / restart. The `persist-session`
+        attribute below is therefore optional — it is kept explicit for clarity;
+        set `persist-session="false"` to opt out (e.g. on shared/kiosk devices).
+        A stored session is reused within a 30-minute SLIDING idle TTL (the timer
+        resets on each message) and never past the token's own JWT `exp`; a stale
+        or expired entry is refused and re-minted. With `enable-logging`,
+        reload+send logs "Restoring session for conversation …" (no token mint) on
+        a hit, or "persist: no restorable session (reason: idle-expired|…)" before
+        a fresh handshake.
       -->
       <inline-agent-widget
         scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
         org-id="YOUR_ORG_ID"
         es-developer-name="YOUR_ES_DEVELOPER_NAME"
-        capabilities-version="1"
+        product-id-param="pid"
         placeholder="Type a message…"
         persist-session
         enable-logging
@@ -83,6 +99,17 @@
       Importing the module runs defineElement() as a side effect, which registers
       <inline-agent-widget>.
     -->
+    <!--
+      Demo-only: seed a `pid` query param so `product-id-param="pid"` above has a
+      value to read, exercising the PDP product-context path. Replace the
+      PLACEHOLDER id with a real product id from your catalog. On a real PDP the
+      page URL already carries this, so you would NOT inject it.
+    -->
+    <script>
+      const demoUrl = new URL(window.location.href);
+      demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
+      window.history.replaceState(null, "", demoUrl);
+    </script>
     <script type="module" src="/src/index.ts"></script>
   </body>
 </html>

@@ -13,7 +13,9 @@ import type {
   AccessTokenRequest,
   AccessTokenResponse,
   CreateConversationRequest,
+  SessionContextVariable,
   SendMessageRequest,
+  SendMessageResponse,
   SSEEventData,
   ConversationEntry,
   RequestOptions,
@@ -79,7 +81,9 @@ export class AgentforceClient extends TypedEventEmitter {
       reconnectDelay: options.reconnectDelay ?? 2000,
       enableLogging: options.enableLogging ?? false,
       platform: options.platform ?? "Web",
-      capabilitiesVersion: options.capabilitiesVersion ?? "1",
+      // Public v2 capabilities version 66 maps to SCRT2's internal v260,
+      // the minimum version that passes custom session-context variables.
+      capabilitiesVersion: options.capabilitiesVersion ?? "66",
     };
 
     this.maxRetries = tuning.maxRetries;
@@ -256,8 +260,14 @@ export class AgentforceClient extends TypedEventEmitter {
    * Send a text message in the current conversation.
    *
    * @param text - The message text to send.
+   * @param contextVariables - Optional external Agentforce variables for this
+   *                           turn. SCRT2 session context is ephemeral, so pass
+   *                           them again on every applicable message.
    */
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(
+    text: string,
+    contextVariables?: readonly SessionContextVariable[],
+  ): Promise<void> {
     this.assertConnected();
     if (!this._conversationId) {
       throw new AgentforceClientError(
@@ -276,11 +286,31 @@ export class AgentforceClient extends TypedEventEmitter {
       esDeveloperName: this.esDeveloperName,
     };
 
-    await this.executeRequest(
+    if (contextVariables?.length) {
+      body.context = [
+        {
+          entryType: "SessionContext",
+          id: crypto.randomUUID(),
+          sessionContext: {
+            contextType: "SessionContextSet",
+            contextVariables: [...contextVariables],
+          },
+        },
+      ];
+    }
+
+    const response = await this.executeRequest<SendMessageResponse | null>(
       "POST",
       `/iamessage/api/v2/conversation/${this._conversationId}/message`,
       body,
     );
+
+    if (response?.warning) {
+      this.logger.warn(
+        `Message accepted with context warning ${response.warning.warningCode}: ` +
+          response.warning.warningMessage,
+      );
+    }
 
     this.logger.debug(`Message sent: ${msgId}`);
   }
