@@ -14,6 +14,7 @@ export function InputBar() {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const busy = state.agentTyping || state.streamingText.length > 0;
+  const notReady = state.status !== "connected";
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
@@ -22,13 +23,13 @@ export function InputBar() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (text.trim().length === 0 || busy) return;
+    if (text.trim().length === 0 || busy || notReady) return;
     void sendMessage(text);
     setText("");
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (busy) return;
+    if (busy || notReady) return;
     if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
     if (e.shiftKey) return;
     e.preventDefault();
@@ -60,7 +61,7 @@ export function InputBar() {
       <button
         className="composer-send"
         type="submit"
-        disabled={text.trim().length === 0 || busy}
+        disabled={text.trim().length === 0 || busy || notReady}
         aria-label="Send question"
       >
         <SendIcon />
