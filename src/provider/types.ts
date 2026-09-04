@@ -13,9 +13,6 @@ export interface WidgetConfig {
   orgId: string;
   /** Embedded Service developer name. */
   esDeveloperName: string;
-  /** Capabilities version sent with the token request (default: "1"). */
-  capabilitiesVersion?: string;
-
   /** Placeholder text for the message input. */
   placeholder?: string;
 

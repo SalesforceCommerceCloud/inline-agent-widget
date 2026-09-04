@@ -39,9 +39,6 @@ export interface AgentforceClientTuning {
 
   /** Platform identifier sent with token requests (default: "Web") */
   platform?: string;
-
-  /** Capabilities version sent with token requests (default: "1") */
-  capabilitiesVersion?: string;
 }
 
 /**
