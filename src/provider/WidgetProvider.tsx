@@ -35,7 +35,6 @@ export function WidgetProvider({
     scrt2Url,
     orgId,
     esDeveloperName,
-    capabilitiesVersion,
     enableLogging,
     persistSession,
     productIdParam,
@@ -67,7 +66,6 @@ export function WidgetProvider({
       orgId,
       esDeveloperName,
       options: {
-        capabilitiesVersion,
         enableLogging,
       },
     });
@@ -193,7 +191,7 @@ export function WidgetProvider({
       if (clientRef.current === client) clientRef.current = null;
       if (persistenceRef.current === persistence) persistenceRef.current = null;
     };
-  }, [scrt2Url, orgId, esDeveloperName, capabilitiesVersion, enableLogging, persistSession]);
+  }, [scrt2Url, orgId, esDeveloperName, enableLogging, persistSession]);
 
   // Warm up the session (token → SSE → conversation) ahead of the first send —
   // called when the user starts typing, so the network latency is hidden behind
