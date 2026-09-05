@@ -24,14 +24,13 @@ export interface ProductContextConfig {
 const CONTEXT_PREFIX = "Viewing product details for:";
 
 /**
- * Built-in fallback strategies for SFCC storefronts, tried in order when no
- * explicit productIdParam / productIdPattern is configured:
+ * Built-in fallback strategies tried in order when no explicit
+ * productIdParam / productIdPattern is configured:
  *  1. PWA — path segment after /product/ (e.g. /global/en-GB/product/25686544M?color=BLACKWL)
- *  2. SFRA — last path segment before .html (e.g. /s/RefArch/name/25686544M.html)
+ *  2. SFRA DOM — data-pid attribute on .product-detail (always present on SFRA PDPs regardless of SEO URL ruleset)
  */
 const DEFAULT_STRATEGIES: ProductContextConfig[] = [
   { productIdPattern: "/product/([^/?#]+)" },
-  { productIdPattern: "/([^/]+)\\.html" },
 ];
 
 /**
@@ -66,10 +65,21 @@ function tryResolve(
 }
 
 /**
+ * Read the product id from the SFRA PDP DOM. The product-detail element always
+ * carries a `data-pid` attribute regardless of the site's SEO URL ruleset, so
+ * this is more reliable than parsing the URL for SFRA storefronts.
+ */
+function readPidFromDom(): string | null {
+  if (typeof document === "undefined") return null;
+  const pid = document.querySelector<HTMLElement>(".product-detail[data-pid]")?.dataset.pid?.trim();
+  return pid || null;
+}
+
+/**
  * Resolve the current product id from a location per the configured strategy:
  * `productIdParam` (query string) first, then `productIdPattern` (path regex,
  * capture group 1). When neither is configured, falls back to built-in
- * strategies for PWA (/product/<id>) and SFRA (/name.html) URL patterns.
+ * strategies: PWA path pattern (/product/<id>), then SFRA DOM (data-pid).
  * Returns `null` when not found or the pattern is invalid — callers then send
  * the message unprefixed. Never throws.
  */
@@ -90,7 +100,7 @@ export function resolveProductId(
     if (id) return id;
   }
 
-  return null;
+  return readPidFromDom();
 }
 
 /**

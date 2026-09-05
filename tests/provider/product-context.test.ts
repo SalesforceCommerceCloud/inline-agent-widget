@@ -50,16 +50,7 @@ describe("resolveProductId", () => {
     ).toBe("25686544M");
   });
 
-  it("uses default SFRA fallback (/name.html) when no config and no /product/ in path", () => {
-    expect(
-      resolveProductId(
-        { search: "?lang=en_US", pathname: "/s/RefArch/black-flat-front-wool-suit/25686544M.html" },
-        {},
-      ),
-    ).toBe("25686544M");
-  });
-
-  it("returns null when neither strategy is configured and no defaults match", () => {
+  it("returns null when neither strategy is configured and no defaults match (no DOM)", () => {
     expect(resolveProductId({ search: "?foo=bar", pathname: "/category/tops" }, {})).toBeNull();
   });
 
