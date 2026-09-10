@@ -79,7 +79,7 @@ export class AgentforceClient extends TypedEventEmitter {
       reconnectDelay: options.reconnectDelay ?? 2000,
       enableLogging: options.enableLogging ?? false,
       platform: options.platform ?? "Web",
-      capabilitiesVersion: options.capabilitiesVersion,
+      capabilitiesVersion: options.capabilitiesVersion ?? "1",
     };
 
     this.maxRetries = tuning.maxRetries;
