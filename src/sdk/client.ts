@@ -51,6 +51,7 @@ export class AgentforceClient extends TypedEventEmitter {
   private readonly maxReconnectAttempts: number;
   private readonly reconnectDelay: number;
   private readonly platform: string;
+  private readonly capabilitiesVersion: string;
   private readonly logger: Logger;
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -78,6 +79,7 @@ export class AgentforceClient extends TypedEventEmitter {
       reconnectDelay: options.reconnectDelay ?? 2000,
       enableLogging: options.enableLogging ?? false,
       platform: options.platform ?? "Web",
+      capabilitiesVersion: options.capabilitiesVersion ?? "1",
     };
 
     this.maxRetries = tuning.maxRetries;
@@ -85,6 +87,7 @@ export class AgentforceClient extends TypedEventEmitter {
     this.maxReconnectAttempts = tuning.maxReconnectAttempts;
     this.reconnectDelay = tuning.reconnectDelay;
     this.platform = tuning.platform;
+    this.capabilitiesVersion = tuning.capabilitiesVersion;
     this.logger = new Logger(tuning.enableLogging);
 
     this.logger.info(`Client initialized for ${this.baseURL}`);
@@ -587,7 +590,7 @@ export class AgentforceClient extends TypedEventEmitter {
     const body: AccessTokenRequest = {
       orgId: this.orgId,
       esDeveloperName: this.esDeveloperName,
-      capabilitiesVersion: "1",
+      capabilitiesVersion: this.capabilitiesVersion,
       platform: this.platform,
     };
 
