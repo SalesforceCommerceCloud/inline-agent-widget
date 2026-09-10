@@ -14,7 +14,7 @@ export interface WidgetConfig {
   /** Embedded Service developer name. */
   esDeveloperName: string;
   /** SCRT2 capabilities version for the access-token request. */
-  capabilitiesVersion?: string;
+  capabilitiesVersion: string;
   /** Placeholder text for the message input. */
   placeholder?: string;
 

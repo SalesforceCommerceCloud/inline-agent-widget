@@ -40,8 +40,8 @@ export interface AgentforceClientTuning {
   /** Platform identifier sent with token requests (default: "Web") */
   platform?: string;
 
-  /** SCRT2 capabilities version for the access-token request (default: "1") */
-  capabilitiesVersion?: string;
+  /** SCRT2 capabilities version for the access-token request. */
+  capabilitiesVersion: string;
 }
 
 /**
