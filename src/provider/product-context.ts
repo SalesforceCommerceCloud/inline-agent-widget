@@ -21,7 +21,7 @@ export interface ProductContextConfig {
 }
 
 /** Fixed wording of the hidden context line (kept in one place). */
-const CONTEXT_PREFIX = "Viewing product details for:";
+const CONTEXT_PREFIX = "Viewing product details for inline-widget:";
 
 /**
  * Built-in fallback strategies tried in order when no explicit
@@ -109,5 +109,5 @@ export function resolveProductId(
  * the widget keeps working as a general chat off the PDP.
  */
 export function withProductContext(text: string, productId: string | null): string {
-  return productId ? `${CONTEXT_PREFIX} ${productId}\n\n${text}` : text;
+  return productId ? `(${CONTEXT_PREFIX} ${productId})\n\n${text}` : text;
 }
