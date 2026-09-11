@@ -100,7 +100,7 @@ describe("resolveProductId", () => {
 describe("withProductContext", () => {
   it("prepends the exact hidden line and a blank line before the query", () => {
     expect(withProductContext("is this waterproof?", "25752986M")).toBe(
-      "Viewing product details for: 25752986M\n\nis this waterproof?",
+      "(Viewing product details for: 25752986M)\n\nis this waterproof?",
     );
   });
 

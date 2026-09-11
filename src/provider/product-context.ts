@@ -109,5 +109,5 @@ export function resolveProductId(
  * the widget keeps working as a general chat off the PDP.
  */
 export function withProductContext(text: string, productId: string | null): string {
-  return productId ? `${CONTEXT_PREFIX} ${productId}\n\n${text}` : text;
+  return productId ? `(${CONTEXT_PREFIX} ${productId})\n\n${text}` : text;
 }
