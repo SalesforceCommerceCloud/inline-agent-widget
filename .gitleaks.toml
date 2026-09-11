@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Test fixtures — synthetic JWTs with fake payloads, not real credentials"
+  paths = [
+    '''tests/helpers/fixtures\.ts''',
+    '''tests/sdk/client\.test\.ts''',
+  ]
