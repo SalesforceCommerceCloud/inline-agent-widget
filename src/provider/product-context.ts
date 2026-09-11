@@ -21,7 +21,7 @@ export interface ProductContextConfig {
 }
 
 /** Fixed wording of the hidden context line (kept in one place). */
-const CONTEXT_PREFIX = "Viewing product details for:";
+const CONTEXT_PREFIX = "Viewing product details for inline-widget:";
 
 /**
  * Built-in fallback strategies tried in order when no explicit
