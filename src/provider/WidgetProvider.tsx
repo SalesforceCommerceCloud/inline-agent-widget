@@ -175,6 +175,7 @@ export function WidgetProvider({
         // already null, cleared by the SDK).
         clearSession(sessionKey);
         hasUserSentRef.current = false;
+        dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
         return;
