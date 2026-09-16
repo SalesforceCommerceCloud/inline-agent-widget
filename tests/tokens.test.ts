@@ -38,6 +38,34 @@ describe("extractTokenText", () => {
     });
     expect(extractTokenText(envelope)).toBe("Here is your **answer**.");
   });
+
+  it("returns an empty string for a JSON-encoded number (not renderable)", () => {
+    // A bare number like "42" doesn't look like JSON (no braces/brackets) and is
+    // returned as plain text before JSON.parse ever runs. Wrapping it in an array
+    // is what actually routes it through JSON.parse into collectRenderableText,
+    // where a number falls through every branch to the final `return null`.
+    expect(extractTokenText("[42]")).toBe("");
+  });
+
+  it("extracts a JSON-encoded plain string's value", () => {
+    // Likewise, a bare quoted string fails the JSON-look-alike check and is
+    // returned verbatim (quotes included). Wrapping it in an array forces
+    // JSON.parse, so collectRenderableText hits the plain-string branch directly.
+    expect(extractTokenText('["hello"]')).toBe("hello");
+  });
+
+  it("falls back to the raw string when JSON-like text fails to parse", () => {
+    const block = '{"type": "markdown",}'; // brace-matched but a trailing comma makes it invalid JSON
+    expect(extractTokenText(block)).toBe(block);
+  });
+
+  it("extracts a top-level content field", () => {
+    expect(extractTokenText('{"content":"direct text"}')).toBe("direct text");
+  });
+
+  it("extracts a top-level text field", () => {
+    expect(extractTokenText('{"text":"direct text"}')).toBe("direct text");
+  });
 });
 
 describe("extractMessageText", () => {
@@ -78,5 +106,16 @@ describe("extractMessageText", () => {
 
   it("falls back to the raw string on invalid JSON", () => {
     expect(extractMessageText("{ not valid json")).toBe("{ not valid json");
+  });
+
+  it("falls back to the raw string for a JSON-encoded number (unlike streaming, which drops it)", () => {
+    // A final message we can't confidently render falls back to the raw text
+    // instead of returning "" — an empty bubble would be worse than the raw JSON.
+    expect(extractMessageText("[42]")).toBe("[42]");
+  });
+
+  it("falls back to the raw string when JSON-like text fails to parse", () => {
+    const block = '{"type": "markdown",}'; // brace-matched but a trailing comma makes it invalid JSON
+    expect(extractMessageText(block)).toBe(block);
   });
 });

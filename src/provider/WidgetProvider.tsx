@@ -169,10 +169,18 @@ export function WidgetProvider({
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("error", (e) => {
+      if (e.code === "SESSION_EXPIRED") {
+        // Session expired — silently reset to idle so the next user interaction
+        // triggers a fresh handshake via ensureConnected (conversationId is
+        // already null, cleared by the SDK).
+        clearSession(sessionKey);
+        hasUserSentRef.current = false;
+        dispatch({ type: "SET_ANSWER", content: "" });
+        dispatch({ type: "SET_STATUS", status: "idle" });
+        dispatch({ type: "SET_ERROR", error: null });
+        return;
+      }
       dispatch({ type: "SET_ERROR", error: e.message });
-      // A non-recoverable error (e.g. SESSION_EXPIRED — the SDK has cleared the
-      // conversationId) means the persisted token is dead: drop it so the next
-      // send starts a clean fresh handshake instead of trying to restore it.
       if (e.recoverable === false) clearSession(sessionKey);
     });
 
