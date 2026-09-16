@@ -395,4 +395,290 @@ describe("auto-reconnect", () => {
     // Clears the pending backoff timer so it can't fire after teardown.
     client.disconnect();
   });
+
+  it("emits SESSION_EXPIRED and clears conversationId when the access token has expired before reconnecting", async () => {
+    vi.useFakeTimers();
+    const { client, stream } = await connectClient({ options: { reconnectDelay: 10 } });
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+    expect(client.conversationId).toBeTruthy();
+
+    const errorSpy = vi.fn();
+    client.on("error", errorSpy);
+
+    // The test access token's exp claim is 4102444800 (seconds) → tokenExpiresAt
+    // is 4102444800000ms. Push Date.now() past that so the reconnect's
+    // token-validity check sees an expired token.
+    vi.spyOn(Date, "now").mockReturnValue(4102444800001);
+
+    stream.close();
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(errorSpy).toHaveBeenCalledWith({
+      code: "SESSION_EXPIRED",
+      message: expect.stringMatching(/session expired/i),
+      recoverable: false,
+    });
+    expect(client.conversationId).toBeNull();
+
+    client.disconnect();
+  });
+
+  it("emits SESSION_EXPIRED when the reconnect SSE request itself returns 401", async () => {
+    vi.useFakeTimers();
+    const { client, stream } = await connectClient({ options: { reconnectDelay: 10 } });
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+    expect(client.conversationId).toBeTruthy();
+
+    const errorSpy = vi.fn();
+    client.on("error", errorSpy);
+
+    // The token still looks valid (not expired), but the very next fetch call
+    // (the reconnect's SSE GET) is rejected by the server with 401.
+    mockFetch.mock.mockImplementationOnce(
+      async () => new Response("unauthorized", { status: 401, statusText: "Unauthorized" }),
+    );
+
+    stream.close();
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+
+    expect(errorSpy).toHaveBeenCalledWith({
+      code: "SESSION_EXPIRED",
+      message: expect.stringMatching(/session expired/i),
+      recoverable: false,
+    });
+    expect(client.conversationId).toBeNull();
+
+    client.disconnect();
+  });
+
+  it("emits MAX_RECONNECT after exhausting all reconnect attempts", async () => {
+    vi.useFakeTimers();
+    const { client, stream } = await connectClient({
+      options: { maxReconnectAttempts: 1, reconnectDelay: 10 },
+    });
+
+    const errorSpy = vi.fn();
+    const reconnectingSpy = vi.fn();
+    client.on("error", errorSpy);
+    client.on("reconnecting", reconnectingSpy);
+
+    // Every subsequent SSE attempt fails with a non-401 error so the client
+    // burns through its (single) retry budget instead of recovering.
+    mockFetch.mock.mockImplementation(
+      async () => new Response("boom", { status: 500, statusText: "Error" }),
+    );
+
+    stream.close();
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(2000);
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+
+    expect(reconnectingSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith({
+      code: "MAX_RECONNECT",
+      message: "Failed to reconnect after 1 attempts",
+      recoverable: false,
+    });
+
+    client.disconnect();
+  });
+});
+
+describe("SSE typing indicator events", () => {
+  it("emits typing_started from CONVERSATION_TYPING_STARTED_INDICATOR", async () => {
+    const { client, stream } = await connectClient();
+    const startedSpy = vi.fn();
+    client.on("typing_started", startedSpy);
+
+    stream.pushEvent("CONVERSATION_TYPING_STARTED_INDICATOR", {
+      conversationEntry: { sender: { role: "Agent" }, senderDisplayName: "Agentforce" },
+    });
+
+    await vi.waitFor(() => expect(startedSpy).toHaveBeenCalled());
+    expect(startedSpy).toHaveBeenCalledWith({
+      conversationId: "",
+      participant: { role: "Agent", name: "Agentforce" },
+    });
+
+    client.disconnect();
+  });
+
+  it("emits typing_stopped from CONVERSATION_TYPING_STOPPED_INDICATOR", async () => {
+    const { client, stream } = await connectClient();
+    const stoppedSpy = vi.fn();
+    client.on("typing_stopped", stoppedSpy);
+
+    stream.pushEvent("CONVERSATION_TYPING_STOPPED_INDICATOR", {
+      conversationEntry: { sender: { role: "Agent" }, senderDisplayName: "Agentforce" },
+    });
+
+    await vi.waitFor(() => expect(stoppedSpy).toHaveBeenCalled());
+    expect(stoppedSpy).toHaveBeenCalledWith({
+      conversationId: "",
+      participant: { role: "Agent", name: "Agentforce" },
+    });
+
+    client.disconnect();
+  });
+
+  it("emits typing events with participant undefined when the SSE payload has no sender", async () => {
+    const { client, stream } = await connectClient();
+    const startedSpy = vi.fn();
+    client.on("typing_started", startedSpy);
+
+    stream.pushEvent("CONVERSATION_TYPING_STARTED_INDICATOR", {});
+
+    await vi.waitFor(() => expect(startedSpy).toHaveBeenCalled());
+    expect(startedSpy).toHaveBeenCalledWith({ conversationId: "", participant: undefined });
+
+    client.disconnect();
+  });
+});
+
+describe("sendMessage() guards", () => {
+  it("throws when called before createConversation", async () => {
+    const { client } = await connectClient();
+
+    await expect(client.sendMessage("hi")).rejects.toThrow(/no active conversation/i);
+
+    client.disconnect();
+  });
+});
+
+describe("restore() validation", () => {
+  it("throws when accessToken is missing", async () => {
+    const client = new AgentforceClient(createClientOptions());
+
+    await expect(
+      client.restore({ accessToken: "", conversationId: TEST_CONVERSATION_ID }),
+    ).rejects.toThrow(/missing accessToken or conversationId/i);
+    expect(client.isConnected).toBe(false);
+  });
+
+  it("throws when conversationId is missing", async () => {
+    const client = new AgentforceClient(createClientOptions());
+
+    await expect(
+      client.restore({ accessToken: TEST_ACCESS_TOKEN, conversationId: "" }),
+    ).rejects.toThrow(/missing accessToken or conversationId/i);
+    expect(client.isConnected).toBe(false);
+  });
+});
+
+describe("reconnect()", () => {
+  it("is a no-op when already connected", async () => {
+    const { client } = await connectClient();
+    const reconnectingSpy = vi.fn();
+    client.on("reconnecting", reconnectingSpy);
+
+    client.reconnect();
+
+    expect(reconnectingSpy).not.toHaveBeenCalled();
+    expect(client.isConnected).toBe(true);
+
+    client.disconnect();
+  });
+
+  it("resets the reconnect counter and re-attempts the SSE stream when disconnected", async () => {
+    vi.useFakeTimers();
+    const { client } = await connectClient({ options: { reconnectDelay: 10 } });
+
+    // An intentional disconnect (not a stream drop) so no auto-reconnect timer
+    // is already in flight when we call the public reconnect() method.
+    client.disconnect();
+    expect(client.isConnected).toBe(false);
+
+    const newStream = createMockSSEStream();
+    mockFetch.respondWithSSEStream(newStream.stream);
+
+    const connectedSpy = vi.fn();
+    const reconnectingSpy = vi.fn();
+    client.on("connected", connectedSpy);
+    client.on("reconnecting", reconnectingSpy);
+
+    client.reconnect();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+
+    expect(reconnectingSpy).toHaveBeenCalledWith({ attempt: 1, maxAttempts: 5 });
+    expect(connectedSpy).toHaveBeenCalledTimes(1);
+    expect(client.isConnected).toBe(true);
+
+    client.disconnect();
+  });
+});
+
+describe("SSE malformed/unknown event handling", () => {
+  it("ignores a non-JSON SSE event payload without throwing", async () => {
+    const { client, stream } = await connectClient();
+    const messageSpy = vi.fn();
+    const errorSpy = vi.fn();
+    client.on("message", messageSpy);
+    client.on("error", errorSpy);
+
+    stream.pushEvent("CONVERSATION_MESSAGE", "not-json{{{");
+    // A trailing valid event proves the stream kept flowing afterward.
+    stream.pushEvent("CONVERSATION_MESSAGE", {
+      conversationEntry: {
+        sender: { role: "Agent" },
+        entryPayload: JSON.stringify({
+          abstractMessage: { staticContent: { text: "still alive" } },
+        }),
+      },
+    });
+
+    await vi.waitFor(() => expect(messageSpy).toHaveBeenCalled());
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    client.disconnect();
+  });
+
+  it("ignores 'ping' SSE events", async () => {
+    const { client, stream } = await connectClient();
+    const messageSpy = vi.fn();
+    client.on("message", messageSpy);
+
+    stream.pushEvent("ping", "");
+    stream.pushEvent("CONVERSATION_MESSAGE", {
+      conversationEntry: {
+        sender: { role: "Agent" },
+        entryPayload: JSON.stringify({
+          abstractMessage: { staticContent: { text: "after ping" } },
+        }),
+      },
+    });
+
+    await vi.waitFor(() => expect(messageSpy).toHaveBeenCalled());
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+
+    client.disconnect();
+  });
+
+  it("ignores an unrecognized SSE event type", async () => {
+    const { client, stream } = await connectClient();
+    const messageSpy = vi.fn();
+    client.on("message", messageSpy);
+
+    stream.pushEvent("SOME_UNKNOWN_EVENT_TYPE", { foo: "bar" });
+    stream.pushEvent("CONVERSATION_MESSAGE", {
+      conversationEntry: {
+        sender: { role: "Agent" },
+        entryPayload: JSON.stringify({
+          abstractMessage: { staticContent: { text: "after unknown" } },
+        }),
+      },
+    });
+
+    await vi.waitFor(() => expect(messageSpy).toHaveBeenCalled());
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+
+    client.disconnect();
+  });
 });
