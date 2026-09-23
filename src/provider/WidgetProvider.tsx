@@ -38,6 +38,10 @@ export function WidgetProvider({
   // user message is sent. A ref (not state) so the long-lived event handlers
   // read the latest value without needing to re-register.
   const hasUserSentRef = useRef(false);
+  // Epoch ms recorded at the start of sendMessage(), before ensureConnected().
+  // Agent messages whose server timestamp is before this are stale (the welcome
+  // greeting generated during createConversation) and get discarded.
+  const sendTimestampRef = useRef(0);
   // Memoizes the in-flight lazy handshake (token → SSE → conversation) so
   // concurrent first sends share one attempt. Readiness itself is tracked by the
   // client's conversationId (see ensureConnected), not a separate flag.
@@ -91,6 +95,7 @@ export function WidgetProvider({
     // A fresh client has no session yet: suppress agent output and require a
     // new lazy connect on the next send.
     hasUserSentRef.current = false;
+    sendTimestampRef.current = 0;
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
@@ -180,12 +185,17 @@ export function WidgetProvider({
     });
     client.on("message", (e) => {
       if (!hasUserSentRef.current) return;
+      if (sendTimestampRef.current && e.timestamp) {
+        const msgTime = new Date(e.timestamp).getTime();
+        if (!isNaN(msgTime) && msgTime < sendTimestampRef.current) return;
+      }
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
         hasUserSentRef.current = false;
+        sendTimestampRef.current = 0;
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
@@ -251,6 +261,10 @@ export function WidgetProvider({
     // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
 
+    // Record BEFORE ensureConnected so the welcome (generated during
+    // createConversation) has a server timestamp well after this value.
+    sendTimestampRef.current = Date.now();
+
     const messageBody =
       withProductContext(
         trimmed,
@@ -291,6 +305,7 @@ export function WidgetProvider({
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
       clearSession(sessionKey);
       hasUserSentRef.current = false;
+      sendTimestampRef.current = Date.now();
       connectPromiseRef.current = null;
 
       try {
