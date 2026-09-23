@@ -276,11 +276,25 @@ export class AgentforceClient extends TypedEventEmitter {
       esDeveloperName: this.esDeveloperName,
     };
 
-    await this.executeRequest(
-      "POST",
-      `/iamessage/api/v2/conversation/${this._conversationId}/message`,
-      body,
-    );
+    try {
+      await this.executeRequest(
+        "POST",
+        `/iamessage/api/v2/conversation/${this._conversationId}/message`,
+        body,
+      );
+    } catch (err) {
+      // 400 = client input error (e.g. message too long) — the session is fine.
+      if (err instanceof AgentforceApiError && err.statusCode === 400) throw err;
+
+      // Any other failure (401/403/5xx/network) means the session is likely
+      // broken. Tear down so the caller can establish a fresh one.
+      this.logger.error(
+        `sendMessage failed — resetting session: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this._conversationId = null;
+      this.disconnect();
+      throw err;
+    }
 
     this.logger.debug(`Message sent: ${msgId}`);
   }

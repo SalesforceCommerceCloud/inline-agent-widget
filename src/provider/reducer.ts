@@ -53,7 +53,11 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
       return { ...state, agentTyping: action.typing };
 
     case "SET_ERROR":
-      return { ...state, error: action.error };
+      return {
+        ...state,
+        error: action.error,
+        ...(action.error ? { lastQuestion: null, answer: null, streamingText: "", agentTyping: false } : {}),
+      };
 
     default:
       return state;
