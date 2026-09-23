@@ -77,7 +77,6 @@ export function ensureConnected(
   holder: PromiseHolder,
   onStart?: () => void,
   persistence?: SessionPersistence,
-  onConversationCreated?: () => void,
 ): Promise<void> {
   // Already fully handshaken — nothing to do.
   if (client.conversationId != null) return Promise.resolve();
@@ -104,7 +103,6 @@ export function ensureConnected(
       // createConversation() failed) — re-connecting would refetch the token.
       if (!client.isConnected) await client.connect();
       await client.createConversation();
-      onConversationCreated?.();
       // Persist the freshly established session so a later page load can restore
       // it. save() reads the client's current token/conversationId/lastEventId.
       persistence?.save();

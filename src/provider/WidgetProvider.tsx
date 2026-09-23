@@ -38,9 +38,6 @@ export function WidgetProvider({
   // user message is sent. A ref (not state) so the long-lived event handlers
   // read the latest value without needing to re-register.
   const hasUserSentRef = useRef(false);
-  // Set to true when createConversation() runs (fresh conversation). The first
-  // agent message after that is the welcome greeting — skip it, then clear.
-  const freshConversationRef = useRef(false);
   // Memoizes the in-flight lazy handshake (token → SSE → conversation) so
   // concurrent first sends share one attempt. Readiness itself is tracked by the
   // client's conversationId (see ensureConnected), not a separate flag.
@@ -94,7 +91,6 @@ export function WidgetProvider({
     // A fresh client has no session yet: suppress agent output and require a
     // new lazy connect on the next send.
     hasUserSentRef.current = false;
-    freshConversationRef.current = false;
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
@@ -183,24 +179,13 @@ export function WidgetProvider({
       if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
-      // Welcome was already blocked by the gate — cancel the skip ticket
-      // so the real reply isn't accidentally dropped.
-      if (!hasUserSentRef.current) {
-        if (freshConversationRef.current) freshConversationRef.current = false;
-        return;
-      }
-      // First message after a fresh conversation is the welcome — skip it.
-      if (freshConversationRef.current) {
-        freshConversationRef.current = false;
-        return;
-      }
+      if (!hasUserSentRef.current) return;
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
         hasUserSentRef.current = false;
-        freshConversationRef.current = false;
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
@@ -246,7 +231,6 @@ export function WidgetProvider({
       connectPromiseRef,
       () => dispatch({ type: "SET_STATUS", status: "connecting" }),
       persistenceRef.current ?? undefined,
-      () => { freshConversationRef.current = true; },
     ).catch(() => {
       // Swallow — surfacing a connect error while the user is merely typing
       // would be noise. sendMessage() will retry and report if it still fails.
@@ -284,7 +268,6 @@ export function WidgetProvider({
         connectPromiseRef,
         () => dispatch({ type: "SET_STATUS", status: "connecting" }),
         persistenceRef.current ?? undefined,
-        () => { freshConversationRef.current = true; },
       );
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(messageBody);
@@ -308,7 +291,6 @@ export function WidgetProvider({
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
       clearSession(sessionKey);
       hasUserSentRef.current = false;
-      freshConversationRef.current = false;
       connectPromiseRef.current = null;
 
       try {
