@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { AgentforceClient } from "../sdk";
+import { AgentforceApiError, AgentforceNetworkError } from "../sdk/errors";
 import { WidgetContext } from "./context";
 import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
 import { resolveProductId, withProductContext } from "./product-context";
+
+function isMessageTooLong(err: unknown): boolean {
+  return (
+    err instanceof AgentforceApiError &&
+    err.statusCode === 400 &&
+    typeof err.responseBody === "string" &&
+    err.responseBody.includes("maximum length")
+  );
+}
+
+function toUserMessage(err: unknown): string {
+  if (isMessageTooLong(err)) return "Message exceeds the maximum length of 4,000 characters.";
+  if (err instanceof AgentforceNetworkError) return "Unable to reach the server. Please try again.";
+  return "Something went wrong. Please try again.";
+}
 
 export function WidgetProvider({
   config,
@@ -111,12 +127,10 @@ export function WidgetProvider({
                 conversationId: stored.conversationId,
                 lastEventId: stored.lastEventId,
               });
-              // Restoring re-opens the SSE stream on an EXISTING conversation, so
-              // there's no fresh auto-greeting to suppress — a returning user has
-              // already engaged. Surface agent output immediately. (The SDK logs
-              // "Restoring session for conversation …" here; the absence of a
-              // "Connecting…"/"Access token acquired" pair confirms no mint.)
-              hasUserSentRef.current = true;
+              // Restoring re-opens the SSE stream on an EXISTING conversation.
+              // Keep hasUserSentRef false so replayed SSE messages (old answer)
+              // are suppressed — the user should start with a clean slate. The
+              // flag flips to true in sendMessage once they actually ask.
               return true;
             } catch (err) {
               // The stored token was valid by our checks but SSE refused it (or
@@ -170,17 +184,15 @@ export function WidgetProvider({
     });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
-        // Session expired — silently reset to idle so the next user interaction
-        // triggers a fresh handshake via ensureConnected (conversationId is
-        // already null, cleared by the SDK).
         clearSession(sessionKey);
         hasUserSentRef.current = false;
+        connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
         return;
       }
-      dispatch({ type: "SET_ERROR", error: e.message });
+      dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
       if (e.recoverable === false) clearSession(sessionKey);
     });
 
@@ -230,71 +242,77 @@ export function WidgetProvider({
     const trimmed = text.trim();
     if (!client || !trimmed) return false;
 
+    if (trimmed.length > 4000) {
+      dispatch({ type: "SET_ERROR", error: "Message exceeds the maximum length of 4,000 characters." });
+      return false;
+    }
+
     // Clear the previous answer immediately so the UI reacts to the send even if
     // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
 
-    // Ensure the session is live before sending. If the user hit Send before the
-    // warm-up finished, this awaits the SAME in-flight handshake (the queue);
-    // once it resolves the message is sent. If warm-up already completed, this
-    // resolves immediately. A session that dropped for good (SESSION_EXPIRED
-    // clears the conversationId) is transparently re-established here.
-    try {
+    const messageBody =
+      withProductContext(
+        trimmed,
+        typeof window !== "undefined"
+          ? resolveProductId(window.location, productContextRef.current)
+          : null,
+      );
+
+    // connectAndSend handles one attempt: ensure the session is live, then send.
+    // On any non-400 failure the SDK tears down the session, so a second call
+    // will do a fresh handshake transparently.
+    const connectAndSend = async (): Promise<void> => {
       await ensureConnected(
         client,
         connectPromiseRef,
         () => dispatch({ type: "SET_STATUS", status: "connecting" }),
         persistenceRef.current ?? undefined,
       );
-    } catch (err) {
-      dispatch({
-        type: "SET_ERROR",
-        error: err instanceof Error ? err.message : "Failed to connect",
-      });
-      dispatch({ type: "SET_STATUS", status: "disconnected" });
-      return false;
-    }
-
-    // Bail if the client was torn down (config change / unmount) mid-handshake.
-    if (clientRef.current !== client) return false;
-
-    // Prepend the hidden product-context line (product id derived from the
-    // current URL) to the SENT body only. The input is already cleared and the
-    // widget never renders outgoing text, so this is invisible to the user.
-    // No-op off a PDP / when unconfigured (resolveProductId → null).
-    const productId =
-      typeof window !== "undefined"
-        ? resolveProductId(window.location, productContextRef.current)
-        : null;
+      if (clientRef.current !== client) throw new Error("unmounted");
+      await client.sendMessage(messageBody);
+    };
 
     try {
-      await client.sendMessage(withProductContext(trimmed, productId));
-    } catch (err) {
-      dispatch({
-        type: "SET_ERROR",
-        error: err instanceof Error ? err.message : "Failed to send message",
-      });
-      return false;
+      await connectAndSend();
+    } catch (firstErr) {
+      // 400 = client input problem (message too long) — don't retry.
+      if (isMessageTooLong(firstErr)) {
+        dispatch({ type: "SET_ERROR", error: toUserMessage(firstErr) });
+        return false;
+      }
+
+      // Any other failure: the SDK already tore down the session. Clear
+      // persisted state and retry once with a completely fresh session.
+      if (enableLogging) {
+        // eslint-disable-next-line no-console
+        console.warn("[Agentforce] first attempt failed, retrying with fresh session:", firstErr);
+      }
+      const sessionKey = buildSessionKey(orgId, esDeveloperName);
+      clearSession(sessionKey);
+      hasUserSentRef.current = false;
+      connectPromiseRef.current = null;
+
+      try {
+        await connectAndSend();
+      } catch (retryErr) {
+        if (enableLogging) {
+          // eslint-disable-next-line no-console
+          console.error("[Agentforce] retry also failed:", retryErr);
+        }
+        dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
+        dispatch({ type: "SET_STATUS", status: "disconnected" });
+        return false;
+      }
     }
 
     // Bail if torn down while the send was in flight.
     if (clientRef.current !== client) return false;
 
-    // Re-persist after each send so the stored snapshot tracks the latest
-    // lastEventId (and re-materializes the entry if it was cleared). Reuse is
-    // bounded by the token's own JWT expiry. No-op when persistence is off.
     persistenceRef.current?.save();
 
-    // Only NOW surface agent output. Creating the conversation makes the agent
-    // auto-send a welcome greeting on the SSE stream (a `{"response":[…]}`
-    // envelope of markdown + suggestions). Keeping this flag false through
-    // connect → createConversation → our send POST means every greeting event
-    // (typing, streamed tokens, final message) is dropped by the handlers
-    // registered above. With warm-on-typing the greeting almost always arrives
-    // and is dropped well before this point. The server emits the reply to
-    // *this* message only after accepting it, so the reply lands after this line
-    // and is shown; the single-answer model also overwrites any rare late
-    // greeting frame with the real reply.
+    // Surface agent output only after the send succeeds. The greeting from
+    // createConversation() was dropped while hasUserSentRef was false.
     hasUserSentRef.current = true;
 
     return true;

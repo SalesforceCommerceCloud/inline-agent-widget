@@ -6,12 +6,17 @@ export function Response() {
 
   const showStreaming = state.streamingText.length > 0;
   const showTyping = state.agentTyping && !showStreaming;
-  const hasActivity = state.error || showTyping || showStreaming || state.answer !== null;
+  const hasActivity =
+    state.error || showTyping || showStreaming || state.answer !== null || state.lastQuestion !== null;
 
   if (!hasActivity) return null;
 
   return (
     <div className="slot">
+      {state.lastQuestion !== null && (
+        <p className="query">{state.lastQuestion}</p>
+      )}
+
       {state.error && (
         <div className="answer" role="status">
           <p className="error">{state.error}</p>
