@@ -261,10 +261,6 @@ export function WidgetProvider({
     // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
 
-    // Record BEFORE ensureConnected so the welcome (generated during
-    // createConversation) has a server timestamp well after this value.
-    sendTimestampRef.current = Date.now();
-
     const messageBody =
       withProductContext(
         trimmed,
@@ -284,6 +280,9 @@ export function WidgetProvider({
         persistenceRef.current ?? undefined,
       );
       if (clientRef.current !== client) throw new Error("unmounted");
+      // Record AFTER ensureConnected — the welcome was generated during
+      // createConversation() so its server timestamp is before this.
+      sendTimestampRef.current = Date.now();
       await client.sendMessage(messageBody);
     };
 
