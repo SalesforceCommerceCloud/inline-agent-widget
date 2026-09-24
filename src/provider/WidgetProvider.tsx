@@ -76,6 +76,34 @@ export function WidgetProvider({
     productContextRef.current = { productIdParam, productIdPattern };
   }, [productIdParam, productIdPattern]);
 
+  // Clear stale question/answer when the user navigates between PDPs via SPA
+  // routing. SPA frameworks use pushState/replaceState (no popstate event) and
+  // the browser fires popstate on back/forward, so we listen for all three.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let lastProductId = resolveProductId(window.location, { productIdParam, productIdPattern });
+
+    const checkProductChange = () => {
+      const currentId = resolveProductId(window.location, { productIdParam, productIdPattern });
+      if (currentId !== lastProductId) {
+        lastProductId = currentId;
+        dispatch({ type: "RESET_CONVERSATION" });
+      }
+    };
+
+    const origPushState = history.pushState.bind(history);
+    const origReplaceState = history.replaceState.bind(history);
+    history.pushState = (...args) => { origPushState(...args); checkProductChange(); };
+    history.replaceState = (...args) => { origReplaceState(...args); checkProductChange(); };
+    window.addEventListener("popstate", checkProductChange);
+
+    return () => {
+      history.pushState = origPushState;
+      history.replaceState = origReplaceState;
+      window.removeEventListener("popstate", checkProductChange);
+    };
+  }, [productIdParam, productIdPattern]);
+
   // Create the client and register handlers whenever a connection-defining
   // attribute changes. In practice these are set once, before mount. NOTE: we
   // deliberately do NOT connect here — no token is fetched and no stream opens

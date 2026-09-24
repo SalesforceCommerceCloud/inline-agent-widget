@@ -95,7 +95,8 @@ export type WidgetAction =
   | { type: "SET_ANSWER"; content: string }
   | { type: "SET_AGENT_TYPING"; typing: boolean }
   | { type: "SET_ERROR"; error: string | null }
-  | { type: "SET_CONNECTION_READY"; ready: boolean };
+  | { type: "SET_CONNECTION_READY"; ready: boolean }
+  | { type: "RESET_CONVERSATION" };
 
 export interface WidgetContextValue {
   state: WidgetState;

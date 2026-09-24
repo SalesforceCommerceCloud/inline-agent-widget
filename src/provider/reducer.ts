@@ -63,6 +63,16 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
     case "SET_CONNECTION_READY":
       return { ...state, connectionReady: action.ready };
 
+    case "RESET_CONVERSATION":
+      return {
+        ...state,
+        lastQuestion: null,
+        answer: null,
+        streamingText: "",
+        agentTyping: false,
+        error: null,
+      };
+
     default:
       return state;
   }
