@@ -42,6 +42,14 @@ export function WidgetProvider({
   // concurrent first sends share one attempt. Readiness itself is tracked by the
   // client's conversationId (see ensureConnected), not a separate flag.
   const connectPromiseRef = useRef<Promise<void> | null>(null);
+  // Safety timeout: if the welcome message hasn't arrived within 5s of
+  // the handshake starting, re-enable the send button anyway.
+  const welcomeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Skip ticket for the welcome greeting. Set when a fresh handshake starts,
+  // consumed by the first Chatbot message. Handles agents that send the welcome
+  // after the user's first message (Agent B) — by that point hasUserSentRef is
+  // true, so the gate alone won't catch it.
+  const welcomePendingRef = useRef(false);
   // The session-persistence adapter for the current client (null when
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
@@ -91,6 +99,7 @@ export function WidgetProvider({
     // A fresh client has no session yet: suppress agent output and require a
     // new lazy connect on the next send.
     hasUserSentRef.current = false;
+    welcomePendingRef.current = false;
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
@@ -131,6 +140,9 @@ export function WidgetProvider({
               // Keep hasUserSentRef false so replayed SSE messages (old answer)
               // are suppressed — the user should start with a clean slate. The
               // flag flips to true in sendMessage once they actually ask.
+              // No welcome greeting is expected on restore, so enable send
+              // immediately.
+              dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
               // The stored token was valid by our checks but SSE refused it (or
@@ -179,17 +191,39 @@ export function WidgetProvider({
       if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
-      if (!hasUserSentRef.current) return;
+      const isChatbot = e.sender.role !== "EndUser";
+      if (!hasUserSentRef.current) {
+        // Gate closed — drop everything. If this is the welcome (Chatbot),
+        // also clear the skip ticket and enable the send button.
+        if (welcomePendingRef.current && isChatbot) {
+          welcomePendingRef.current = false;
+          if (welcomeTimeoutRef.current) {
+            clearTimeout(welcomeTimeoutRef.current);
+            welcomeTimeoutRef.current = null;
+          }
+          dispatch({ type: "SET_CONNECTION_READY", ready: true });
+        }
+        return;
+      }
+      // Gate open — but the welcome may arrive after the user sent (Agent B).
+      // The EndUser echo passes through; the first Chatbot message is the
+      // welcome — skip it.
+      if (welcomePendingRef.current && isChatbot) {
+        welcomePendingRef.current = false;
+        return;
+      }
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
         hasUserSentRef.current = false;
+        welcomePendingRef.current = false;
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
+        dispatch({ type: "SET_CONNECTION_READY", ready: true });
         return;
       }
       dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
@@ -198,6 +232,10 @@ export function WidgetProvider({
 
     return () => {
       client.off();
+      if (welcomeTimeoutRef.current) {
+        clearTimeout(welcomeTimeoutRef.current);
+        welcomeTimeoutRef.current = null;
+      }
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
       // — so a persisted session correctly survives to the next page. This only
@@ -223,19 +261,30 @@ export function WidgetProvider({
   // error then). Crucially, the greeting the agent auto-sends on conversation
   // creation arrives during this warm-up window, while hasUserSentRef is still
   // false — so it is dropped by the handlers above before the user ever sends.
+  const onHandshakeStart = useCallback(() => {
+    dispatch({ type: "SET_STATUS", status: "connecting" });
+    dispatch({ type: "SET_CONNECTION_READY", ready: false });
+    welcomePendingRef.current = true;
+    if (welcomeTimeoutRef.current) clearTimeout(welcomeTimeoutRef.current);
+    welcomeTimeoutRef.current = setTimeout(() => {
+      welcomeTimeoutRef.current = null;
+      dispatch({ type: "SET_CONNECTION_READY", ready: true });
+    }, 5000);
+  }, []);
+
   const prepareConnection = useCallback(() => {
     const client = clientRef.current;
     if (!client) return;
     void ensureConnected(
       client,
       connectPromiseRef,
-      () => dispatch({ type: "SET_STATUS", status: "connecting" }),
+      onHandshakeStart,
       persistenceRef.current ?? undefined,
     ).catch(() => {
       // Swallow — surfacing a connect error while the user is merely typing
       // would be noise. sendMessage() will retry and report if it still fails.
     });
-  }, []);
+  }, [onHandshakeStart]);
 
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
@@ -266,7 +315,7 @@ export function WidgetProvider({
       await ensureConnected(
         client,
         connectPromiseRef,
-        () => dispatch({ type: "SET_STATUS", status: "connecting" }),
+        onHandshakeStart,
         persistenceRef.current ?? undefined,
       );
       if (clientRef.current !== client) throw new Error("unmounted");
@@ -291,6 +340,7 @@ export function WidgetProvider({
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
       clearSession(sessionKey);
       hasUserSentRef.current = false;
+      welcomePendingRef.current = false;
       connectPromiseRef.current = null;
 
       try {
@@ -316,7 +366,7 @@ export function WidgetProvider({
     hasUserSentRef.current = true;
 
     return true;
-  }, []);
+  }, [onHandshakeStart]);
 
   const value = useMemo(
     () => ({ state, dispatch, sendMessage, prepareConnection, config }),
