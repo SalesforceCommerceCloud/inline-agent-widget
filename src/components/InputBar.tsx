@@ -14,7 +14,7 @@ export function InputBar() {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const busy = state.agentTyping || state.streamingText.length > 0;
-  const notReady = state.status !== "connected";
+  const notReady = !state.connectionReady;
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
