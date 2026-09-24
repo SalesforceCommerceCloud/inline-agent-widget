@@ -42,6 +42,9 @@ export function WidgetProvider({
   // concurrent first sends share one attempt. Readiness itself is tracked by the
   // client's conversationId (see ensureConnected), not a separate flag.
   const connectPromiseRef = useRef<Promise<void> | null>(null);
+  // Safety timeout: if the welcome message hasn't arrived within 5s of
+  // createConversation(), re-enable the send button anyway.
+  const welcomeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The session-persistence adapter for the current client (null when
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
@@ -67,6 +70,24 @@ export function WidgetProvider({
   useEffect(() => {
     productContextRef.current = { productIdParam, productIdPattern };
   }, [productIdParam, productIdPattern]);
+
+  // Track the current product ID so we can clear stale question/answer when the
+  // user navigates between PDPs without unmounting the widget (SPA navigation).
+  const prevProductIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const currentProductId =
+      typeof window !== "undefined"
+        ? resolveProductId(window.location, { productIdParam, productIdPattern })
+        : null;
+    if (prevProductIdRef.current === undefined) {
+      prevProductIdRef.current = currentProductId;
+      return;
+    }
+    if (currentProductId !== prevProductIdRef.current) {
+      prevProductIdRef.current = currentProductId;
+      dispatch({ type: "RESET_CONVERSATION" });
+    }
+  });
 
   // Create the client and register handlers whenever a connection-defining
   // attribute changes. In practice these are set once, before mount. NOTE: we
@@ -131,6 +152,9 @@ export function WidgetProvider({
               // Keep hasUserSentRef false so replayed SSE messages (old answer)
               // are suppressed — the user should start with a clean slate. The
               // flag flips to true in sendMessage once they actually ask.
+              // No welcome greeting is expected on restore, so enable send
+              // immediately.
+              dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
               // The stored token was valid by our checks but SSE refused it (or
@@ -179,7 +203,15 @@ export function WidgetProvider({
       if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
-      if (!hasUserSentRef.current) return;
+      if (!hasUserSentRef.current) {
+        // This is the welcome greeting — drop it and enable the send button.
+        if (welcomeTimeoutRef.current) {
+          clearTimeout(welcomeTimeoutRef.current);
+          welcomeTimeoutRef.current = null;
+        }
+        dispatch({ type: "SET_CONNECTION_READY", ready: true });
+        return;
+      }
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("error", (e) => {
@@ -190,6 +222,7 @@ export function WidgetProvider({
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
+        dispatch({ type: "SET_CONNECTION_READY", ready: true });
         return;
       }
       dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
@@ -198,6 +231,10 @@ export function WidgetProvider({
 
     return () => {
       client.off();
+      if (welcomeTimeoutRef.current) {
+        clearTimeout(welcomeTimeoutRef.current);
+        welcomeTimeoutRef.current = null;
+      }
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
       // — so a persisted session correctly survives to the next page. This only
@@ -215,6 +252,15 @@ export function WidgetProvider({
     };
   }, [scrt2Url, orgId, esDeveloperName, capabilitiesVersion, enableLogging, persistSession]);
 
+  const onConversationCreated = useCallback(() => {
+    dispatch({ type: "SET_CONNECTION_READY", ready: false });
+    if (welcomeTimeoutRef.current) clearTimeout(welcomeTimeoutRef.current);
+    welcomeTimeoutRef.current = setTimeout(() => {
+      welcomeTimeoutRef.current = null;
+      dispatch({ type: "SET_CONNECTION_READY", ready: true });
+    }, 5000);
+  }, []);
+
   // Warm up the session (token → SSE → conversation) ahead of the first send —
   // called when the user starts typing, so the network latency is hidden behind
   // their typing time. Idempotent and non-blocking: ensureConnected short-
@@ -231,11 +277,12 @@ export function WidgetProvider({
       connectPromiseRef,
       () => dispatch({ type: "SET_STATUS", status: "connecting" }),
       persistenceRef.current ?? undefined,
+      onConversationCreated,
     ).catch(() => {
       // Swallow — surfacing a connect error while the user is merely typing
       // would be noise. sendMessage() will retry and report if it still fails.
     });
-  }, []);
+  }, [onConversationCreated]);
 
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
@@ -268,6 +315,7 @@ export function WidgetProvider({
         connectPromiseRef,
         () => dispatch({ type: "SET_STATUS", status: "connecting" }),
         persistenceRef.current ?? undefined,
+        onConversationCreated,
       );
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(messageBody);
@@ -316,7 +364,7 @@ export function WidgetProvider({
     hasUserSentRef.current = true;
 
     return true;
-  }, []);
+  }, [onConversationCreated]);
 
   const value = useMemo(
     () => ({ state, dispatch, sendMessage, prepareConnection, config }),

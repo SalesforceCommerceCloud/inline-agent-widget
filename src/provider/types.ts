@@ -76,6 +76,13 @@ export interface WidgetState {
   error: string | null;
   /** The shopper's last question, displayed as a bubble above the answer. */
   lastQuestion: string | null;
+  /**
+   * `true` when the widget is ready to accept a user message. Goes `false`
+   * while a fresh handshake is in progress (waiting for the agent's automatic
+   * welcome greeting to arrive and be suppressed), then `true` once the
+   * welcome is consumed or a safety timeout fires.
+   */
+  connectionReady: boolean;
 }
 
 export type WidgetAction =
@@ -87,7 +94,9 @@ export type WidgetAction =
   // The final, authoritative answer content for the current question.
   | { type: "SET_ANSWER"; content: string }
   | { type: "SET_AGENT_TYPING"; typing: boolean }
-  | { type: "SET_ERROR"; error: string | null };
+  | { type: "SET_ERROR"; error: string | null }
+  | { type: "RESET_CONVERSATION" }
+  | { type: "SET_CONNECTION_READY"; ready: boolean };
 
 export interface WidgetContextValue {
   state: WidgetState;

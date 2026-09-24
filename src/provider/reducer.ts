@@ -8,6 +8,7 @@ export const initialWidgetState: WidgetState = {
   agentTyping: false,
   error: null,
   lastQuestion: null,
+  connectionReady: true,
 };
 
 export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetState {
@@ -58,6 +59,19 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         error: action.error,
         ...(action.error ? { lastQuestion: null, answer: null, streamingText: "", agentTyping: false } : {}),
       };
+
+    case "RESET_CONVERSATION":
+      return {
+        ...state,
+        lastQuestion: null,
+        answer: null,
+        streamingText: "",
+        agentTyping: false,
+        error: null,
+      };
+
+    case "SET_CONNECTION_READY":
+      return { ...state, connectionReady: action.ready };
 
     default:
       return state;
