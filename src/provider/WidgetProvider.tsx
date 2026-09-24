@@ -188,6 +188,10 @@ export function WidgetProvider({
       if (hasUserSentRef.current) dispatch({ type: "SET_AGENT_TYPING", typing: false });
     });
     client.on("streaming_token", (e) => {
+      // Streaming tokens mean the agent is generating the real answer — the
+      // welcome either already arrived or isn't coming. Clear the skip ticket
+      // so the real answer's final message event is never dropped.
+      if (welcomePendingRef.current) welcomePendingRef.current = false;
       if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
