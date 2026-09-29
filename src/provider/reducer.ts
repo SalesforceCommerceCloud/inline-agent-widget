@@ -9,6 +9,7 @@ export const initialWidgetState: WidgetState = {
   error: null,
   lastQuestion: null,
   connectionReady: true,
+  pdpQuestions: [],
 };
 
 export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetState {
@@ -64,6 +65,9 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
       return { ...state, connectionReady: action.ready };
 
     case "RESET_CONVERSATION":
+      // Pills belong to the product, not the conversation — leave pdpQuestions
+      // in place. When the effect that watches config.pdpQuestions runs for the
+      // new product it will dispatch SET_PDP_QUESTIONS with the new list.
       return {
         ...state,
         lastQuestion: null,
@@ -72,6 +76,9 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         agentTyping: false,
         error: null,
       };
+
+    case "SET_PDP_QUESTIONS":
+      return { ...state, pdpQuestions: action.questions };
 
     default:
       return state;

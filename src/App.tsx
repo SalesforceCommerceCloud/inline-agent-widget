@@ -1,5 +1,6 @@
 import { WidgetProvider } from "./provider/WidgetProvider";
 import { InputBar } from "./components/InputBar";
+import { QuestionPills } from "./components/QuestionPills";
 import { Response } from "./components/Response";
 import { SparkleIcon } from "./components/icons";
 import type { WidgetConfig } from "./provider/types";
@@ -18,6 +19,7 @@ export function App({ config }: { config: WidgetConfig }) {
           <span className="widget-badge">New</span>
         </header>
         <InputBar />
+        <QuestionPills />
         <Response />
       </div>
     </WidgetProvider>

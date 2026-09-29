@@ -64,7 +64,17 @@ export function WidgetProvider({
     persistSession,
     productIdParam,
     productIdPattern,
+    pdpQuestions,
   } = config;
+
+  // Keep the reducer's pdpQuestions in sync with the incoming config. Fires on
+  // initial mount and whenever the host swaps the list (SPA nav to a different
+  // PDP, variant switch that re-fetches the product). The array is
+  // JSON.stringify-compared so identity churn doesn't cause a needless dispatch.
+  const pdpQuestionsKey = pdpQuestions ? JSON.stringify(pdpQuestions) : "";
+  useEffect(() => {
+    dispatch({ type: "SET_PDP_QUESTIONS", questions: pdpQuestions ?? [] });
+  }, [pdpQuestionsKey]);
 
   // The URL-based product-context config, held in a ref so the dependency-stable
   // sendMessage callback (deps: []) reads the latest without being recreated —
