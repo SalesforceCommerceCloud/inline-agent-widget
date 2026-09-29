@@ -84,12 +84,13 @@ If `elementId` isn't in the DOM yet, `mount()` waits for it via a `MutationObser
 | `placeholder` | | Placeholder text for the input (default `Type a message…`). |
 | `product-id-param` | | PDP product context (never shown). Query-string parameter to read the product id from, e.g. `pid`. See [Product context (PDP)](#product-context-pdp). |
 | `product-id-pattern` | | PDP product context (never shown). Regex matched against the URL path; capture group 1 is the product id, e.g. `/product/([^/?#]+)`. See [Product context (PDP)](#product-context-pdp). |
+| `pdp-questions` | | JSON-encoded array of opener questions to render as tappable pills above the input (e.g. `'["Is this waterproof?","Battery life?"]'`). Capped at 5, deduped and trimmed; malformed input is ignored. Pills auto-hide after the shopper's first question and re-appear on SPA-navigation between PDPs when the host swaps the list. |
 | `enable-logging` | | Present ⇒ enables `[Agentforce]` debug logging in the console. |
 | `persist-session` | | Present ⇒ persist the anonymous session so the conversation survives page navigation / reload / restart (default **off**), until the token's own JWT `exp`. **Read the security note below before enabling.** |
 
 These three required values are the same **non-secret** identifiers Salesforce's own embedded messaging snippet uses for anonymous sessions. Connection attributes are read at mount; treat them as set-once.
 
-The `mount()` API takes the camelCase equivalents (`scrt2Url`, `orgId`, `esDeveloperName`, `capabilitiesVersion`, `placeholder`, `productIdParam`, `productIdPattern`, `enableLogging`, `persistSession`).
+The `mount()` API takes the camelCase equivalents (`scrt2Url`, `orgId`, `esDeveloperName`, `capabilitiesVersion`, `placeholder`, `productIdParam`, `productIdPattern`, `pdpQuestions`, `enableLogging`, `persistSession`). `pdpQuestions` is a `string[]` (already parsed) rather than a JSON string.
 
 ## Product context (PDP)
 

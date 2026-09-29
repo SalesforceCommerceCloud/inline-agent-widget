@@ -33,6 +33,15 @@ export interface WidgetConfig {
   productIdParam?: string;
   productIdPattern?: string;
 
+  /**
+   * Opener questions to render as tappable pills above the input. When set, the
+   * widget shows the pills until the shopper asks their first question (typed
+   * or by pill click); tapping a pill sends it exactly as if it were typed.
+   * On SPA navigation between PDPs the reducer resets the conversation, which
+   * naturally re-shows the pills for the new product's list.
+   */
+  pdpQuestions?: string[];
+
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;
   /**
@@ -83,6 +92,8 @@ export interface WidgetState {
    * welcome is consumed or a safety timeout fires.
    */
   connectionReady: boolean;
+  /** Opener question pills for the current product. Empty when unset. */
+  pdpQuestions: string[];
 }
 
 export type WidgetAction =
@@ -96,7 +107,8 @@ export type WidgetAction =
   | { type: "SET_AGENT_TYPING"; typing: boolean }
   | { type: "SET_ERROR"; error: string | null }
   | { type: "SET_CONNECTION_READY"; ready: boolean }
-  | { type: "RESET_CONVERSATION" };
+  | { type: "RESET_CONVERSATION" }
+  | { type: "SET_PDP_QUESTIONS"; questions: string[] };
 
 export interface WidgetContextValue {
   state: WidgetState;
