@@ -32,7 +32,12 @@ export type {
   AccessTokenRequest,
   AccessTokenResponse,
   CreateConversationRequest,
+  SessionContextTextValue,
+  SessionContextVariable,
+  SessionContextEntry,
   SendMessageRequest,
+  SendMessageResponse,
+  SendMessageWarning,
   ConversationEntry,
   SSEEventData,
 } from "./types";

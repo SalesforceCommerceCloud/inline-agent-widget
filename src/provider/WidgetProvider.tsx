@@ -6,7 +6,7 @@ import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
-import { resolveProductId, withProductContext } from "./product-context";
+import { buildPdpInlineContext, resolveProductId } from "./product-context";
 
 function isMessageTooLong(err: unknown): boolean {
   return (
@@ -332,13 +332,14 @@ export function WidgetProvider({
     // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
 
-    const messageBody =
-      withProductContext(
-        trimmed,
-        typeof window !== "undefined"
-          ? resolveProductId(window.location, productContextRef.current)
-          : null,
-      );
+    // Resolve the product id from the current URL immediately before each send.
+    // The agent resets these external variables after every turn, so PDP context
+    // must be attached to every applicable message. Off a PDP, context is
+    // omitted and the widget retains its general-chat behavior.
+    const productId =
+      typeof window !== "undefined"
+        ? resolveProductId(window.location, productContextRef.current)
+        : null;
 
     // connectAndSend handles one attempt: ensure the session is live, then send.
     // On any non-400 failure the SDK tears down the session, so a second call
@@ -351,7 +352,10 @@ export function WidgetProvider({
         persistenceRef.current ?? undefined,
       );
       if (clientRef.current !== client) throw new Error("unmounted");
-      await client.sendMessage(messageBody);
+      await client.sendMessage(
+        trimmed,
+        productId ? buildPdpInlineContext(productId) : undefined,
+      );
     };
 
     try {

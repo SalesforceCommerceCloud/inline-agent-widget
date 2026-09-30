@@ -71,7 +71,8 @@
         scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
         org-id="YOUR_ORG_ID"
         es-developer-name="YOUR_ES_DEVELOPER_NAME"
-        capabilities-version="1"
+        capabilities-version="65"
+        product-id-param="pid"
         placeholder="Type a message…"
         persist-session
         enable-logging
@@ -83,6 +84,16 @@
       Importing the module runs defineElement() as a side effect, which registers
       <inline-agent-widget>.
     -->
+    <!--
+      Demo-only: seed a `pid` query param so `product-id-param="pid"` above has a
+      value to read, exercising the PDP product-context path. Replace the
+      PLACEHOLDER id with a real product id from your catalog.
+    -->
+    <script>
+      const demoUrl = new URL(window.location.href);
+      demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
+      window.history.replaceState(null, "", demoUrl);
+    </script>
     <script type="module" src="/src/index.ts"></script>
   </body>
 </html>

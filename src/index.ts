@@ -19,4 +19,6 @@ export {
   type AgentforceMessageEvent,
   type AgentforceStreamingTokenEvent,
   type AgentforceErrorEvent,
+  type SessionContextTextValue,
+  type SessionContextVariable,
 } from "./sdk";
