@@ -8,6 +8,8 @@ export interface RenderHandle {
   update(config: WidgetConfig): void;
   /** Unmount React and clean up. */
   unmount(): void;
+  /** The active SCRT2 conversation ID, or null before the first message. */
+  readonly conversationId: string | null;
 }
 
 const REQUIRED_MESSAGE_SCRT2 =
@@ -29,7 +31,11 @@ function missingConfigMessage(config: WidgetConfig): string | null {
  * ever added to document.head — the widget stays isolated inside its shadow
  * root.
  */
-export function renderInto(shadowRoot: ShadowRoot, config: WidgetConfig): RenderHandle {
+export function renderInto(
+  shadowRoot: ShadowRoot,
+  config: WidgetConfig,
+  hostElement?: HTMLElement,
+): RenderHandle {
   const style = document.createElement("style");
   style.textContent = styles;
   shadowRoot.appendChild(style);
@@ -53,20 +59,28 @@ export function renderInto(shadowRoot: ShadowRoot, config: WidgetConfig): Render
         container.remove();
         style.remove();
       },
+      get conversationId() {
+        return null;
+      },
     };
   }
 
+  const conversationIdRef = { current: null as string | null };
+
   const root: Root = createRoot(container);
-  root.render(<App config={config} />);
+  root.render(<App config={config} hostElement={hostElement} conversationIdRef={conversationIdRef} />);
 
   return {
     update(next: WidgetConfig) {
-      root.render(<App config={next} />);
+      root.render(<App config={next} hostElement={hostElement} conversationIdRef={conversationIdRef} />);
     },
     unmount() {
       root.unmount();
       container.remove();
       style.remove();
+    },
+    get conversationId() {
+      return conversationIdRef.current;
     },
   };
 }

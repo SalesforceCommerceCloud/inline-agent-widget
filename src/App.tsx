@@ -4,9 +4,17 @@ import { Response } from "./components/Response";
 import { SparkleIcon } from "./components/icons";
 import type { WidgetConfig } from "./provider/types";
 
-export function App({ config }: { config: WidgetConfig }) {
+export function App({
+  config,
+  hostElement,
+  conversationIdRef,
+}: {
+  config: WidgetConfig;
+  hostElement?: HTMLElement;
+  conversationIdRef?: { current: string | null };
+}) {
   return (
-    <WidgetProvider config={config}>
+    <WidgetProvider config={config} hostElement={hostElement} conversationIdRef={conversationIdRef}>
       <div className="widget">
         <header className="widget-header">
           <div className="widget-header-brand">
