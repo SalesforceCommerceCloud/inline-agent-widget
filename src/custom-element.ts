@@ -42,11 +42,16 @@ export class InlineAgentWidgetElement extends HTMLElement {
 
   private handle: RenderHandle | null = null;
 
+  /** The active SCRT2 conversation ID, or null before the first message is sent. */
+  get conversationId(): string | null {
+    return this.handle?.conversationId ?? null;
+  }
+
   connectedCallback(): void {
     if (this.handle) return; // guard against double-mount
 
     const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" });
-    this.handle = renderInto(shadow, readConfig(this));
+    this.handle = renderInto(shadow, readConfig(this), this);
   }
 
   attributeChangedCallback(): void {

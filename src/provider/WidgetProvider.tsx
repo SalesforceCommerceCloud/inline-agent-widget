@@ -26,9 +26,13 @@ function toUserMessage(err: unknown): string {
 export function WidgetProvider({
   config,
   children,
+  hostElement,
+  conversationIdRef,
 }: {
   config: WidgetConfig;
   children: ReactNode;
+  hostElement?: HTMLElement;
+  conversationIdRef?: { current: string | null };
 }) {
   const [state, dispatch] = useReducer(widgetReducer, initialWidgetState);
   const clientRef = useRef<AgentforceClient | null>(null);
@@ -246,6 +250,20 @@ export function WidgetProvider({
       }
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
+    client.on("session_ready", (e) => {
+      if (hostElement) {
+        hostElement.dispatchEvent(
+          new CustomEvent("iaw:session-ready", {
+            detail: {
+              conversationId: e.conversationId,
+              messagingSessionId: e.messagingSessionId,
+            },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
@@ -264,6 +282,7 @@ export function WidgetProvider({
 
     return () => {
       client.off();
+      if (conversationIdRef) conversationIdRef.current = null;
       if (welcomeTimeoutRef.current) {
         clearTimeout(welcomeTimeoutRef.current);
         welcomeTimeoutRef.current = null;
@@ -304,6 +323,11 @@ export function WidgetProvider({
     }, 5000);
   }, []);
 
+  const onConversationCreated = useCallback(() => {
+    const id = clientRef.current?.conversationId ?? null;
+    if (conversationIdRef) conversationIdRef.current = id;
+  }, [conversationIdRef]);
+
   const prepareConnection = useCallback(() => {
     const client = clientRef.current;
     if (!client) return;
@@ -312,11 +336,12 @@ export function WidgetProvider({
       connectPromiseRef,
       onHandshakeStart,
       persistenceRef.current ?? undefined,
+      onConversationCreated,
     ).catch(() => {
       // Swallow — surfacing a connect error while the user is merely typing
       // would be noise. sendMessage() will retry and report if it still fails.
     });
-  }, [onHandshakeStart]);
+  }, [onHandshakeStart, onConversationCreated]);
 
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
@@ -349,6 +374,7 @@ export function WidgetProvider({
         connectPromiseRef,
         onHandshakeStart,
         persistenceRef.current ?? undefined,
+        onConversationCreated,
       );
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(messageBody);
@@ -398,7 +424,7 @@ export function WidgetProvider({
     hasUserSentRef.current = true;
 
     return true;
-  }, [onHandshakeStart]);
+  }, [onHandshakeStart, onConversationCreated]);
 
   const value = useMemo(
     () => ({ state, dispatch, sendMessage, prepareConnection, config }),
