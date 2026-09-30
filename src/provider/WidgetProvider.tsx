@@ -250,6 +250,20 @@ export function WidgetProvider({
       }
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
+    client.on("session_ready", (e) => {
+      if (hostElement) {
+        hostElement.dispatchEvent(
+          new CustomEvent("iaw:session-ready", {
+            detail: {
+              conversationId: e.conversationId,
+              messagingSessionId: e.messagingSessionId,
+            },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    });
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
