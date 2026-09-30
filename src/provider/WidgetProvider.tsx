@@ -326,16 +326,7 @@ export function WidgetProvider({
   const onConversationCreated = useCallback(() => {
     const id = clientRef.current?.conversationId ?? null;
     if (conversationIdRef) conversationIdRef.current = id;
-    if (hostElement && id) {
-      hostElement.dispatchEvent(
-        new CustomEvent("iaw:conversation-started", {
-          detail: { conversationId: id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  }, [hostElement, conversationIdRef]);
+  }, [conversationIdRef]);
 
   const prepareConnection = useCallback(() => {
     const client = clientRef.current;
