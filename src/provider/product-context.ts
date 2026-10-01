@@ -18,6 +18,12 @@ export interface ProductContextConfig {
 const PDP_INLINE_CONTEXT_MESSAGE =
   "This is the product details page the user is currently looking at";
 
+export interface PageContext {
+  type: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
 /**
  * Built-in fallback strategies tried in order when no explicit
  * productIdParam / productIdPattern is configured:
@@ -98,26 +104,18 @@ export function resolveProductId(
   return readPidFromDom();
 }
 
-/** Build the three external variables expected by the inline PDP agent. */
+/** Build the single page_context variable expected by the inline PDP agent. */
 export function buildPdpInlineContext(productId: string): SessionContextVariable[] {
+  const pageContext: PageContext = {
+    type: "pdp_inline",
+    message: PDP_INLINE_CONTEXT_MESSAGE,
+    data: { id: productId },
+  };
+
   return [
     {
-      name: "page_context_type",
-      value: { valueType: "TextValue", textValue: "pdp_inline" },
-    },
-    {
-      name: "page_context_message",
-      value: {
-        valueType: "TextValue",
-        textValue: PDP_INLINE_CONTEXT_MESSAGE,
-      },
-    },
-    {
-      name: "page_context_data",
-      value: {
-        valueType: "TextValue",
-        textValue: JSON.stringify({ id: productId }),
-      },
+      name: "page_context",
+      value: { valueType: "TextValue", textValue: JSON.stringify(pageContext) },
     },
   ];
 }

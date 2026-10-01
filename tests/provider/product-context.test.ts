@@ -101,41 +101,32 @@ describe("resolveProductId", () => {
 });
 
 describe("buildPdpInlineContext", () => {
-  it("builds the three string variables expected by the pdp_inline agent", () => {
-    expect(buildPdpInlineContext("1050633A6D")).toEqual([
-      {
-        name: "page_context_type",
-        value: { valueType: "TextValue", textValue: "pdp_inline" },
-      },
-      {
-        name: "page_context_message",
-        value: {
-          valueType: "TextValue",
-          textValue: "This is the product details page the user is currently looking at",
-        },
-      },
-      {
-        name: "page_context_data",
-        value: {
-          valueType: "TextValue",
-          textValue: '{"id":"1050633A6D"}',
-        },
-      },
-    ]);
+  it("builds a single page_context variable with the expected JSON object", () => {
+    const context = buildPdpInlineContext("1050633A6D");
+    expect(context).toHaveLength(1);
+    expect(context[0].name).toBe("page_context");
+
+    const parsed = JSON.parse(context[0].value.textValue);
+    expect(parsed).toEqual({
+      type: "pdp_inline",
+      message: "This is the product details page the user is currently looking at",
+      data: { id: "1050633A6D" },
+    });
   });
 
   it("JSON-encodes product ids instead of interpolating unsafe JSON", () => {
     const productId = 'sku"\\\nnext';
     const context = buildPdpInlineContext(productId);
 
-    expect(JSON.parse(context[2].value.textValue)).toEqual({ id: productId });
+    const parsed = JSON.parse(context[0].value.textValue);
+    expect(parsed.data).toEqual({ id: productId });
   });
 
   it("uses the latest product id when context is rebuilt after navigation", () => {
     const first = buildPdpInlineContext("PRODUCT-A");
     const second = buildPdpInlineContext("PRODUCT-B");
 
-    expect(first[2].value.textValue).toBe('{"id":"PRODUCT-A"}');
-    expect(second[2].value.textValue).toBe('{"id":"PRODUCT-B"}');
+    expect(JSON.parse(first[0].value.textValue).data.id).toBe("PRODUCT-A");
+    expect(JSON.parse(second[0].value.textValue).data.id).toBe("PRODUCT-B");
   });
 });

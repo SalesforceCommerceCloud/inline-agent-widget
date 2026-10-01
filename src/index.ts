@@ -22,3 +22,4 @@ export {
   type SessionContextTextValue,
   type SessionContextVariable,
 } from "./sdk";
+export type { PageContext } from "./provider/product-context";

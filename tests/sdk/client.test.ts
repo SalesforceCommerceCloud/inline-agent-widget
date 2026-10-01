@@ -216,21 +216,16 @@ describe("conversation lifecycle request bodies", () => {
     mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
     await client.createConversation();
 
+    const pageContext = JSON.stringify({
+      type: "pdp_inline",
+      message: "This is the product details page the user is currently looking at",
+      data: { id: "1050633A6D" },
+    });
+
     await client.sendMessage("Is this waterproof?", [
       {
-        name: "page_context_type",
-        value: { valueType: "TextValue", textValue: "pdp_inline" },
-      },
-      {
-        name: "page_context_message",
-        value: {
-          valueType: "TextValue",
-          textValue: "This is the product details page the user is currently looking at",
-        },
-      },
-      {
-        name: "page_context_data",
-        value: { valueType: "TextValue", textValue: '{"id":"1050633A6D"}' },
+        name: "page_context",
+        value: { valueType: "TextValue", textValue: pageContext },
       },
     ]);
 
@@ -253,23 +248,8 @@ describe("conversation lifecycle request bodies", () => {
             contextType: "SessionContextSet",
             contextVariables: [
               {
-                name: "page_context_type",
-                value: { valueType: "TextValue", textValue: "pdp_inline" },
-              },
-              {
-                name: "page_context_message",
-                value: {
-                  valueType: "TextValue",
-                  textValue:
-                    "This is the product details page the user is currently looking at",
-                },
-              },
-              {
-                name: "page_context_data",
-                value: {
-                  valueType: "TextValue",
-                  textValue: '{"id":"1050633A6D"}',
-                },
+                name: "page_context",
+                value: { valueType: "TextValue", textValue: pageContext },
               },
             ],
           },
