@@ -21,7 +21,7 @@ const PDP_INLINE_CONTEXT_MESSAGE =
 export interface PageContext {
   type: string;
   message: string;
-  data: Record<string, unknown>;
+  data: string;
 }
 
 /**
@@ -109,7 +109,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
   const pageContext: PageContext = {
     type: "pdp_inline",
     message: PDP_INLINE_CONTEXT_MESSAGE,
-    data: { id: productId },
+    data: JSON.stringify({ id: productId }),
   };
 
   return [

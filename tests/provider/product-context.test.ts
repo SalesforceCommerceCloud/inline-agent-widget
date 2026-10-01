@@ -110,7 +110,7 @@ describe("buildPdpInlineContext", () => {
     expect(parsed).toEqual({
       type: "pdp_inline",
       message: "This is the product details page the user is currently looking at",
-      data: { id: "1050633A6D" },
+      data: '{"id":"1050633A6D"}',
     });
   });
 
@@ -119,14 +119,14 @@ describe("buildPdpInlineContext", () => {
     const context = buildPdpInlineContext(productId);
 
     const parsed = JSON.parse(context[0].value.textValue);
-    expect(parsed.data).toEqual({ id: productId });
+    expect(JSON.parse(parsed.data)).toEqual({ id: productId });
   });
 
   it("uses the latest product id when context is rebuilt after navigation", () => {
     const first = buildPdpInlineContext("PRODUCT-A");
     const second = buildPdpInlineContext("PRODUCT-B");
 
-    expect(JSON.parse(first[0].value.textValue).data.id).toBe("PRODUCT-A");
-    expect(JSON.parse(second[0].value.textValue).data.id).toBe("PRODUCT-B");
+    expect(JSON.parse(JSON.parse(first[0].value.textValue).data).id).toBe("PRODUCT-A");
+    expect(JSON.parse(JSON.parse(second[0].value.textValue).data).id).toBe("PRODUCT-B");
   });
 });

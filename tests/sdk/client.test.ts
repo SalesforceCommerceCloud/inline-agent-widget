@@ -219,7 +219,7 @@ describe("conversation lifecycle request bodies", () => {
     const pageContext = JSON.stringify({
       type: "pdp_inline",
       message: "This is the product details page the user is currently looking at",
-      data: { id: "1050633A6D" },
+      data: JSON.stringify({ id: "1050633A6D" }),
     });
 
     await client.sendMessage("Is this waterproof?", [
