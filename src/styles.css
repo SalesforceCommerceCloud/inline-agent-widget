@@ -226,6 +226,20 @@
   cursor: not-allowed;
 }
 
+/* Selected state: the pill whose question produced the answer currently
+ * shown below. Matches the Alexa-for-shopping "selected" treatment —
+ * inverted bg/fg so the shopper can see which pill they most recently
+ * asked. aria-pressed is set from state.lastQuestion in QuestionPills. */
+.pill[aria-pressed="true"] {
+  background: var(--iaw-accent);
+  color: var(--iaw-accent-fg);
+  border-color: var(--iaw-accent);
+}
+
+.pill[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--iaw-accent);
+}
+
 /* ── Conversation slot: query bubble + answer card ── */
 .slot {
   display: flex;
