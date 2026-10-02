@@ -216,16 +216,16 @@ describe("conversation lifecycle request bodies", () => {
     mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
     await client.createConversation();
 
-    const pageContext = JSON.stringify({
-      type: "pdp_inline",
-      message: "This is the product details page the user is currently looking at",
-      data: JSON.stringify({ id: "1050633A6D" }),
+    const embeddedContext = JSON.stringify({
+      page_context_type: "pdp_inline",
+      page_context_message: "This is the product details page the user is currently looking at",
+      page_context_data: JSON.stringify({ id: "1050633A6D" }),
     });
 
     await client.sendMessage("Is this waterproof?", [
       {
-        name: "page_context",
-        value: { valueType: "TextValue", textValue: pageContext },
+        name: "embedded_agent_context",
+        value: { valueType: "TextValue", textValue: embeddedContext },
       },
     ]);
 
@@ -248,8 +248,8 @@ describe("conversation lifecycle request bodies", () => {
             contextType: "SessionContextSet",
             contextVariables: [
               {
-                name: "page_context",
-                value: { valueType: "TextValue", textValue: pageContext },
+                name: "embedded_agent_context",
+                value: { valueType: "TextValue", textValue: embeddedContext },
               },
             ],
           },
