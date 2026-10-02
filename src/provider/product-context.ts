@@ -1,15 +1,10 @@
+import type { SessionContextVariable } from "../sdk";
+
 /**
- * Hidden product-context prefix for outgoing messages.
+ * PDP context for outgoing messages.
  *
- * The widget is placed only on the Product Detail Page. When configured, it
- * derives the current product id from the page URL and prepends a short context
- * line to the message SENT to the agent — this is never shown in the UI (the
- * widget has no transcript and never renders outgoing text), so the agent can
- * answer about the product on screen without the shopper naming it.
- *
- * Both functions are pure (no DOM/React access) — the caller passes in
- * `window.location` — which keeps them trivially unit-testable and lets the
- * product id be resolved fresh at send time.
+ * The product id is resolved fresh at send time and passed through SCRT2's
+ * per-turn session-context API. The shopper's text stays unchanged.
  */
 
 /** URL-extraction strategy (a subset of {@link WidgetConfig}). */
@@ -20,8 +15,14 @@ export interface ProductContextConfig {
   productIdPattern?: string;
 }
 
-/** Fixed wording of the hidden context line (kept in one place). */
-const CONTEXT_PREFIX = "Viewing product details for inline-widget:";
+const PDP_INLINE_CONTEXT_MESSAGE =
+  "This is the product details page the user is currently looking at";
+
+export interface EmbeddedAgentContext {
+  page_context_type: string;
+  page_context_message: string;
+  page_context_data: string;
+}
 
 /**
  * Built-in fallback strategies tried in order when no explicit
@@ -81,7 +82,7 @@ function readPidFromDom(): string | null {
  * capture group 1). When neither is configured, falls back to built-in
  * strategies: PWA path pattern (/product/<id>), then SFRA DOM (data-pid).
  * Returns `null` when not found or the pattern is invalid — callers then send
- * the message unprefixed. Never throws.
+ * the message without PDP context. Never throws.
  */
 export function resolveProductId(
   loc: Pick<Location, "search" | "pathname">,
@@ -103,11 +104,18 @@ export function resolveProductId(
   return readPidFromDom();
 }
 
-/**
- * Prepend the hidden product-context line to an outgoing message body. When
- * `productId` is `null` this is a no-op and the text is returned unchanged, so
- * the widget keeps working as a general chat off the PDP.
- */
-export function withProductContext(text: string, productId: string | null): string {
-  return productId ? `(${CONTEXT_PREFIX} ${productId})\n\n${text}` : text;
+/** Build the single embedded_agent_context variable expected by the inline PDP agent. */
+export function buildPdpInlineContext(productId: string): SessionContextVariable[] {
+  const context: EmbeddedAgentContext = {
+    page_context_type: "pdp_inline",
+    page_context_message: PDP_INLINE_CONTEXT_MESSAGE,
+    page_context_data: JSON.stringify({ id: productId }),
+  };
+
+  return [
+    {
+      name: "embedded_agent_context",
+      value: { valueType: "TextValue", textValue: JSON.stringify(context) },
+    },
+  ];
 }

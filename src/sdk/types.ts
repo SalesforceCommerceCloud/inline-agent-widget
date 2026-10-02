@@ -40,7 +40,7 @@ export interface AgentforceClientTuning {
   /** Platform identifier sent with token requests (default: "Web") */
   platform?: string;
 
-  /** SCRT2 capabilities version for the access-token request (default: "1") */
+  /** SCRT2 capabilities version for the access-token request (default: "65") */
   capabilitiesVersion?: string;
 }
 
@@ -208,6 +208,28 @@ export interface CreateConversationRequest {
   routingAttributes?: Record<string, string>;
 }
 
+/** A string-valued external Agentforce variable in SCRT2 session context. */
+export interface SessionContextTextValue {
+  valueType: "TextValue";
+  textValue: string;
+}
+
+/** A named external Agentforce variable sent for the current turn. */
+export interface SessionContextVariable {
+  name: string;
+  value: SessionContextTextValue;
+}
+
+/** The SCRT2 envelope around per-turn Agentforce context variables. */
+export interface SessionContextEntry {
+  entryType: "SessionContext";
+  id: string;
+  sessionContext: {
+    contextType: "SessionContextSet";
+    contextVariables: SessionContextVariable[];
+  };
+}
+
 export interface SendMessageRequest {
   message: {
     id: string;
@@ -218,6 +240,17 @@ export interface SendMessageRequest {
     };
   };
   esDeveloperName: string;
+  context?: SessionContextEntry[];
+}
+
+export interface SendMessageWarning {
+  warningCode: string;
+  warningMessage: string;
+}
+
+export interface SendMessageResponse {
+  conversationEntries?: unknown[];
+  warning?: SendMessageWarning;
 }
 
 /**

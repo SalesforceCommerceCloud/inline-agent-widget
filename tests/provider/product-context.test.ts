@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveProductId, withProductContext } from "../../src/provider/product-context";
+import {
+  buildPdpInlineContext,
+  resolveProductId,
+} from "../../src/provider/product-context";
 
 describe("resolveProductId", () => {
   it("reads the id from the configured query-string param (SFRA Product-Show shape)", () => {
@@ -97,14 +100,33 @@ describe("resolveProductId", () => {
   });
 });
 
-describe("withProductContext", () => {
-  it("prepends the exact hidden line and a blank line before the query", () => {
-    expect(withProductContext("is this waterproof?", "25752986M")).toBe(
-      "(Viewing product details for inline-widget: 25752986M)\n\nis this waterproof?",
-    );
+describe("buildPdpInlineContext", () => {
+  it("builds a single embedded_agent_context variable with the expected JSON object", () => {
+    const context = buildPdpInlineContext("1050633A6D");
+    expect(context).toHaveLength(1);
+    expect(context[0].name).toBe("embedded_agent_context");
+
+    const parsed = JSON.parse(context[0].value.textValue);
+    expect(parsed).toEqual({
+      page_context_type: "pdp_inline",
+      page_context_message: "This is the product details page the user is currently looking at",
+      page_context_data: '{"id":"1050633A6D"}',
+    });
   });
 
-  it("returns the text unchanged when there is no product id", () => {
-    expect(withProductContext("hello", null)).toBe("hello");
+  it("JSON-encodes product ids instead of interpolating unsafe JSON", () => {
+    const productId = 'sku"\\\nnext';
+    const context = buildPdpInlineContext(productId);
+
+    const parsed = JSON.parse(context[0].value.textValue);
+    expect(JSON.parse(parsed.page_context_data)).toEqual({ id: productId });
+  });
+
+  it("uses the latest product id when context is rebuilt after navigation", () => {
+    const first = buildPdpInlineContext("PRODUCT-A");
+    const second = buildPdpInlineContext("PRODUCT-B");
+
+    expect(JSON.parse(JSON.parse(first[0].value.textValue).page_context_data).id).toBe("PRODUCT-A");
+    expect(JSON.parse(JSON.parse(second[0].value.textValue).page_context_data).id).toBe("PRODUCT-B");
   });
 });

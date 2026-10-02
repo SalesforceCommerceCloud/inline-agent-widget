@@ -19,4 +19,7 @@ export {
   type AgentforceMessageEvent,
   type AgentforceStreamingTokenEvent,
   type AgentforceErrorEvent,
+  type SessionContextTextValue,
+  type SessionContextVariable,
 } from "./sdk";
+export type { EmbeddedAgentContext } from "./provider/product-context";
