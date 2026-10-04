@@ -114,7 +114,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
 
   return [
     {
-      name: "embedded_agent_context",
+      name: "agent_context",
       value: { valueType: "TextValue", textValue: JSON.stringify(context) },
     },
   ];

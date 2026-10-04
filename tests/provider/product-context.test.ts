@@ -104,7 +104,7 @@ describe("buildPdpInlineContext", () => {
   it("builds a single embedded_agent_context variable with the expected JSON object", () => {
     const context = buildPdpInlineContext("1050633A6D");
     expect(context).toHaveLength(1);
-    expect(context[0].name).toBe("embedded_agent_context");
+    expect(context[0].name).toBe("agent_context");
 
     const parsed = JSON.parse(context[0].value.textValue);
     expect(parsed).toEqual({

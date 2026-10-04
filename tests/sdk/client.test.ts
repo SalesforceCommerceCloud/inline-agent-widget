@@ -224,7 +224,7 @@ describe("conversation lifecycle request bodies", () => {
 
     await client.sendMessage("Is this waterproof?", [
       {
-        name: "embedded_agent_context",
+        name: "agent_context",
         value: { valueType: "TextValue", textValue: embeddedContext },
       },
     ]);
@@ -248,7 +248,7 @@ describe("conversation lifecycle request bodies", () => {
             contextType: "SessionContextSet",
             contextVariables: [
               {
-                name: "embedded_agent_context",
+                name: "agent_context",
                 value: { valueType: "TextValue", textValue: embeddedContext },
               },
             ],
