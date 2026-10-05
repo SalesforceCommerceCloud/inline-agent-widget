@@ -1,4 +1,5 @@
 import { renderInto, type RenderHandle } from "./render";
+import { parsePdpQuestions } from "./provider/pdp-questions";
 import type { WidgetConfig } from "./provider/types";
 
 const TAG_NAME = "inline-agent-widget";
@@ -11,6 +12,8 @@ const OBSERVED = [
   "placeholder",
   "product-id-param",
   "product-id-pattern",
+  "pdp-questions",
+  "product-name",
   "enable-logging",
   "persist-session",
 ] as const;
@@ -25,6 +28,8 @@ function readConfig(el: HTMLElement): WidgetConfig {
     placeholder: attr("placeholder"),
     productIdParam: attr("product-id-param"),
     productIdPattern: attr("product-id-pattern"),
+    pdpQuestions: parsePdpQuestions(attr("pdp-questions")),
+    productName: attr("product-name"),
     enableLogging: el.hasAttribute("enable-logging"),
     persistSession: el.hasAttribute("persist-session"),
   };

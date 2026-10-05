@@ -13,8 +13,15 @@ export function Response() {
 
   return (
     <div className="slot">
+      {/* Right-aligned chat-bubble echo of the shopper's question. Rendered
+          for ALL sends (pill or typed) — the bubble is the north-star
+          acknowledgement surface and replaces pill highlighting. See the
+          Shiseido-Sandbox northstar design: dark pill-shaped bubble above
+          the answer card. */}
       {state.lastQuestion !== null && (
-        <p className="query">{state.lastQuestion}</p>
+        <div className="user-bubble-row">
+          <div className="user-bubble">{state.lastQuestion}</div>
+        </div>
       )}
 
       {state.error && (

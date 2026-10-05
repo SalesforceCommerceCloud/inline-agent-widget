@@ -19,6 +19,17 @@ export interface WidgetConfig {
   placeholder?: string;
 
   /**
+   * Current PDP product name, used to template the InputBar placeholder as
+   * `"Ask me anything about <productName>"`. When unset, the InputBar falls
+   * back to `placeholder` (or the generic default). Sourced from SCAPI's
+   * `name` field on the Shopper Products response; the PWA Kit / SFRA shim
+   * passes it through on PDP mount and updates it on variant / SPA nav.
+   * The widget does not read product data itself — it only renders what the
+   * host passes.
+   */
+  productName?: string;
+
+  /**
    * PDP product-context (never shown to the user). When set, the widget derives
    * the current product id from the page URL and prepends
    * `"Viewing product details for: <id>"` to the message SENT to the agent.
@@ -32,6 +43,15 @@ export interface WidgetConfig {
    */
   productIdParam?: string;
   productIdPattern?: string;
+
+  /**
+   * Opener questions to render as tappable pills above the input. When set, the
+   * widget shows the pills until the shopper asks their first question (typed
+   * or by pill click); tapping a pill sends it exactly as if it were typed.
+   * On SPA navigation between PDPs the reducer resets the conversation, which
+   * naturally re-shows the pills for the new product's list.
+   */
+  pdpQuestions?: string[];
 
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;
@@ -83,6 +103,19 @@ export interface WidgetState {
    * welcome is consumed or a safety timeout fires.
    */
   connectionReady: boolean;
+  /** Opener question pills for the current product. Empty when unset. */
+  pdpQuestions: string[];
+  /**
+   * Questions the shopper has already asked in this PDP session. QuestionPills
+   * filters these out so the shopper is never shown a pill they already
+   * clicked (addresses "stale pill" concern — the answer is already above).
+   * Reset on PDP navigation via RESET_CONVERSATION. On every ASK_QUESTION the
+   * question text is appended (deduped); the match in QuestionPills is by
+   * exact string equality against pdpQuestions, so a typed free-text question
+   * has no effect on the pill shelf. Once Shilpi's follow-up pills land, this
+   * list also feeds "filter already-asked from follow-up suggestions" for free.
+   */
+  askedQuestions: string[];
 }
 
 export type WidgetAction =
@@ -96,7 +129,8 @@ export type WidgetAction =
   | { type: "SET_AGENT_TYPING"; typing: boolean }
   | { type: "SET_ERROR"; error: string | null }
   | { type: "SET_CONNECTION_READY"; ready: boolean }
-  | { type: "RESET_CONVERSATION" };
+  | { type: "RESET_CONVERSATION" }
+  | { type: "SET_PDP_QUESTIONS"; questions: string[] };
 
 export interface WidgetContextValue {
   state: WidgetState;

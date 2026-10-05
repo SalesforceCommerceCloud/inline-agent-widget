@@ -16,8 +16,19 @@
   --iaw-accent-fg: #ffffff;
   --iaw-muted: #6b7280;
   --iaw-error: #b42318;
+  /* Right-aligned user bubble (shopper's question echo). Northstar is the
+   * dark accent pill (Shiseido-Sandbox); separate vars so merchants can
+   * re-skin the bubble without pulling the whole accent across the UI. */
+  --iaw-user-bubble-bg: var(--iaw-accent);
+  --iaw-user-bubble-fg: var(--iaw-accent-fg);
+  /* Legacy name retained for hosts that may have overridden it before the
+   * north-star pivot. Unused by current CSS. Safe to drop in a future bump. */
   --iaw-query-bg: #dbeafe;
   --iaw-answer-bg: #ffffff;
+  --iaw-pill-bg: #ffffff;
+  --iaw-pill-fg: var(--iaw-fg);
+  --iaw-pill-border: var(--iaw-border);
+  --iaw-pill-hover-bg: #f5f5f5;
   --iaw-max-height: 480px;
   --iaw-max-width: 100%;
 
@@ -177,7 +188,56 @@
   outline-offset: 2px;
 }
 
-/* ── Conversation slot: query bubble + answer card ── */
+/* ── Opener question pills ── */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pills-item {
+  display: inline-flex;
+}
+
+.pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--iaw-pill-bg);
+  color: var(--iaw-pill-fg);
+  border: 1px solid var(--iaw-pill-border);
+  border-radius: 9999px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  text-align: left;
+}
+
+.pill:hover:not(:disabled) {
+  background: var(--iaw-pill-hover-bg);
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--iaw-accent);
+  outline-offset: 2px;
+}
+
+.pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* No pill selected-state in the north-star layout: the right-aligned user
+ * bubble above the answer carries the "which question am I looking at?"
+ * acknowledgement. See QuestionPills.tsx JSDoc. */
+
+/* ── Conversation slot: user bubble + answer card ── */
 .slot {
   display: flex;
   flex-direction: column;
@@ -185,14 +245,23 @@
   width: 100%;
 }
 
-.query {
-  align-self: flex-end;
+/* Right-aligned chat-bubble echo of the shopper's question. Flex-row wrapper
+ * pushes the bubble to the right; the bubble itself is a dark pill-shaped
+ * container matching the Shiseido-Sandbox northstar. Rendered for every send
+ * (pill or typed) — see Response.tsx. */
+.user-bubble-row {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.user-bubble {
   max-width: 80%;
   margin: 0;
-  padding: 12px 20px;
-  background: var(--iaw-query-bg);
-  border-radius: var(--iaw-radius);
-  color: var(--iaw-fg);
+  padding: 10px 16px;
+  background: var(--iaw-user-bubble-bg);
+  color: var(--iaw-user-bubble-fg);
+  border-radius: 9999px;
   font-size: 14px;
   line-height: 20px;
   text-align: left;

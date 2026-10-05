@@ -9,6 +9,8 @@ export const initialWidgetState: WidgetState = {
   error: null,
   lastQuestion: null,
   connectionReady: true,
+  pdpQuestions: [],
+  askedQuestions: [],
 };
 
 export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetState {
@@ -30,6 +32,14 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         streamingText: "",
         error: null,
         lastQuestion: action.question,
+        // Record the question so QuestionPills can filter it out of the shelf.
+        // Only pill-clicks will match a pdpQuestions entry (string equality);
+        // typed free-text questions are recorded too but harmlessly — they
+        // don't match any pill. Dedup to keep the array bounded: a shopper
+        // retyping a question verbatim shouldn't grow the list.
+        askedQuestions: state.askedQuestions.includes(action.question)
+          ? state.askedQuestions
+          : [...state.askedQuestions, action.question],
       };
 
     case "APPEND_STREAMING_TOKEN":
@@ -64,6 +74,12 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
       return { ...state, connectionReady: action.ready };
 
     case "RESET_CONVERSATION":
+      // Pills belong to the product, not the conversation — leave pdpQuestions
+      // in place. When the effect that watches config.pdpQuestions runs for the
+      // new product it will dispatch SET_PDP_QUESTIONS with the new list.
+      // askedQuestions IS cleared: a shopper arriving at a new PDP should see
+      // that product's full pill shelf, regardless of what they asked on the
+      // previous PDP.
       return {
         ...state,
         lastQuestion: null,
@@ -71,7 +87,11 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         streamingText: "",
         agentTyping: false,
         error: null,
+        askedQuestions: [],
       };
+
+    case "SET_PDP_QUESTIONS":
+      return { ...state, pdpQuestions: action.questions };
 
     default:
       return state;
