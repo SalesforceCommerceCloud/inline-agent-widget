@@ -7,6 +7,7 @@ import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
 import { resolveProductId, withProductContext } from "./product-context";
+import { createWelcomeGate } from "./welcome-gate";
 
 function isMessageTooLong(err: unknown): boolean {
   return (
@@ -49,11 +50,17 @@ export function WidgetProvider({
   // Safety timeout: if the welcome message hasn't arrived within 5s of
   // the handshake starting, re-enable the send button anyway.
   const welcomeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Skip ticket for the welcome greeting. Set when a fresh handshake starts,
-  // consumed by the first Chatbot message. Handles agents that send the welcome
-  // after the user's first message (Agent B) — by that point hasUserSentRef is
-  // true, so the gate alone won't catch it.
-  const welcomePendingRef = useRef(false);
+  // Welcome-greeting gate. Opened when a fresh handshake starts, closed on
+  // any definitive signal: welcome arrived + was dropped, streaming started,
+  // the 5s welcome-timeout fired, SESSION_EXPIRED, or remount cleanup.
+  // `pending` is the skip ticket consulted by the message handler; `wait()`
+  // is awaited by sendMessage so the user POST is held until the ticket is
+  // resolved — otherwise a fast agent's real answer can be eaten as "the
+  // welcome" on a cold first send (classic "first-click never answers" bug).
+  // On a warm send (no handshake running), `wait()` is a resolved-microtask
+  // no-op. Lazily-constructed via a ref so the gate's identity is stable
+  // across renders without rebuilding on every mount.
+  const welcomeGateRef = useRef(createWelcomeGate());
   // The session-persistence adapter for the current client (null when
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
@@ -141,7 +148,7 @@ export function WidgetProvider({
     // A fresh client has no session yet: suppress agent output and require a
     // new lazy connect on the next send.
     hasUserSentRef.current = false;
-    welcomePendingRef.current = false;
+    welcomeGateRef.current.close();
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
@@ -231,31 +238,33 @@ export function WidgetProvider({
     });
     client.on("streaming_token", (e) => {
       // Streaming tokens mean the agent is generating the real answer — the
-      // welcome either already arrived or isn't coming. Clear the skip ticket
-      // so the real answer's final message event is never dropped.
-      if (welcomePendingRef.current) welcomePendingRef.current = false;
+      // welcome either already arrived or isn't coming. Resolve the welcome
+      // gate so the real answer's final message event is never dropped AND
+      // any sendMessage() awaiter proceeds (lazy-send path).
+      welcomeGateRef.current.close();
       if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
       const isChatbot = e.sender.role !== "EndUser";
       if (!hasUserSentRef.current) {
         // Gate closed — drop everything. If this is the welcome (Chatbot),
-        // also clear the skip ticket and enable the send button.
-        if (welcomePendingRef.current && isChatbot) {
-          welcomePendingRef.current = false;
+        // also resolve the welcome gate and enable the send button.
+        if (welcomeGateRef.current.pending && isChatbot) {
           if (welcomeTimeoutRef.current) {
             clearTimeout(welcomeTimeoutRef.current);
             welcomeTimeoutRef.current = null;
           }
+          welcomeGateRef.current.close();
           dispatch({ type: "SET_CONNECTION_READY", ready: true });
         }
         return;
       }
-      // Gate open — but the welcome may arrive after the user sent (Agent B).
-      // The EndUser echo passes through; the first Chatbot message is the
-      // welcome — skip it.
-      if (welcomePendingRef.current && isChatbot) {
-        welcomePendingRef.current = false;
+      // Gate open — but the welcome may still arrive here (Agent B emits it
+      // after the user sends, OR a sendMessage() that did NOT await the gate
+      // got here first). The EndUser echo passes through; the first Chatbot
+      // message while the gate is pending is the welcome — skip it.
+      if (welcomeGateRef.current.pending && isChatbot) {
+        welcomeGateRef.current.close();
         return;
       }
       dispatch({ type: "SET_ANSWER", content: e.content });
@@ -278,7 +287,7 @@ export function WidgetProvider({
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
         hasUserSentRef.current = false;
-        welcomePendingRef.current = false;
+        welcomeGateRef.current.close();
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
@@ -297,6 +306,10 @@ export function WidgetProvider({
         clearTimeout(welcomeTimeoutRef.current);
         welcomeTimeoutRef.current = null;
       }
+      // Release any sendMessage() awaiter still blocked on the gate so it can
+      // observe the unmount check and bail cleanly (it won't dispatch either
+      // way — the clientRef !== client guard in connectAndSend catches it).
+      welcomeGateRef.current.close();
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
       // — so a persisted session correctly survives to the next page. This only
@@ -325,10 +338,16 @@ export function WidgetProvider({
   const onHandshakeStart = useCallback(() => {
     dispatch({ type: "SET_STATUS", status: "connecting" });
     dispatch({ type: "SET_CONNECTION_READY", ready: false });
-    welcomePendingRef.current = true;
+    welcomeGateRef.current.open();
     if (welcomeTimeoutRef.current) clearTimeout(welcomeTimeoutRef.current);
     welcomeTimeoutRef.current = setTimeout(() => {
       welcomeTimeoutRef.current = null;
+      // Nothing came in 5s: close the gate (releases any sendMessage() awaiter
+      // on the lazy-send path, so the user POST goes out instead of hanging
+      // forever) and re-enable the Send button. Any Chatbot message that
+      // arrives after this is treated as the real answer (gate no longer
+      // pending), which is the right call for a silent agent.
+      welcomeGateRef.current.close();
       dispatch({ type: "SET_CONNECTION_READY", ready: true });
     }, 5000);
   }, []);
@@ -375,9 +394,20 @@ export function WidgetProvider({
           : null,
       );
 
-    // connectAndSend handles one attempt: ensure the session is live, then send.
-    // On any non-400 failure the SDK tears down the session, so a second call
-    // will do a fresh handshake transparently.
+    // connectAndSend handles one attempt: ensure the session is live, wait for
+    // the welcome ticket to resolve, then send. On any non-400 failure the SDK
+    // tears down the session, so a second call will do a fresh handshake
+    // transparently.
+    //
+    // Why await the welcome gate here: on a cold lazy-send (first click of a
+    // pill, or first Send on an untyped InputBar), ensureConnected() opens the
+    // gate, then returns. If we POST before the welcome has landed and been
+    // dropped by the handler, the agent's REAL answer can arrive first and get
+    // eaten as "the welcome" (classic first-click-no-answer bug). Awaiting the
+    // gate guarantees we POST only after the welcome has been dropped (fast
+    // agent), skipped (streaming started), or timed out (silent agent). On a
+    // warm send (handshake already complete, no gate open), the await is a
+    // no-op microtask.
     const connectAndSend = async (): Promise<void> => {
       await ensureConnected(
         client,
@@ -386,6 +416,8 @@ export function WidgetProvider({
         persistenceRef.current ?? undefined,
         onConversationCreated,
       );
+      if (clientRef.current !== client) throw new Error("unmounted");
+      await welcomeGateRef.current.wait();
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(messageBody);
     };
@@ -408,7 +440,7 @@ export function WidgetProvider({
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
       clearSession(sessionKey);
       hasUserSentRef.current = false;
-      welcomePendingRef.current = false;
+      welcomeGateRef.current.close();
       connectPromiseRef.current = null;
 
       try {
