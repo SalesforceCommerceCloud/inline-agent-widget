@@ -50,17 +50,32 @@ export function WidgetProvider({
   // Safety timeout: if the welcome message hasn't arrived within 5s of
   // the handshake starting, re-enable the send button anyway.
   const welcomeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Welcome-greeting gate. Opened when a fresh handshake starts, closed on
-  // any definitive signal: welcome arrived + was dropped, streaming started,
-  // the 5s welcome-timeout fired, SESSION_EXPIRED, or remount cleanup.
-  // `pending` is the skip ticket consulted by the message handler; `wait()`
-  // is awaited by sendMessage so the user POST is held until the ticket is
-  // resolved — otherwise a fast agent's real answer can be eaten as "the
-  // welcome" on a cold first send (classic "first-click never answers" bug).
-  // On a warm send (no handshake running), `wait()` is a resolved-microtask
-  // no-op. Lazily-constructed via a ref so the gate's identity is stable
+  // Welcome-greeting gate — SEND-SIDE guard only. `wait()` is awaited by
+  // sendMessage so the user POST is held until either the welcome has
+  // resolved or the 5s timeout fires, preventing a fast agent's real
+  // answer from being eaten as "the welcome" on a cold first send
+  // (classic "first-click never answers" bug). On a warm send (no
+  // handshake running), `wait()` is a resolved-microtask no-op.
+  // RECEIVE-SIDE "is the welcome consumed?" state lives in
+  // welcomeDroppedRef below, which outlives the timeout so a slow
+  // welcome that arrives post-POST is still correctly identified.
+  // Lazily-constructed via a ref so the gate's identity is stable
   // across renders without rebuilding on every mount.
   const welcomeGateRef = useRef(createWelcomeGate());
+  // Durable "has the welcome been consumed yet?" flag. The gate above is a
+  // SEND-SIDE guard (hold the user POST until the welcome has resolved OR the
+  // 5s timeout fires). This flag is a RECEIVE-SIDE guard that outlives the
+  // timeout: on a slow Agentforce (>5s to emit the welcome `message`), the
+  // gate closes on timeout, the user POST goes out, hasUserSentRef flips true
+  // — and then the late welcome `message` arrives. Without this flag, the
+  // message handler sees `hasUserSentRef=true` + `gate.pending=false` and
+  // falls through to SET_ANSWER, flashing the welcome as if it were the
+  // answer (observed in incognito-cold loads). Flipped true the first time
+  // we consume any Chatbot `message`, OR pre-set true on a successful
+  // tryRestore (no welcome is emitted on restore). Reset to false everywhere
+  // a fresh handshake is about to run (new client, SESSION_EXPIRED, retry
+  // prelude).
+  const welcomeDroppedRef = useRef(false);
   // The session-persistence adapter for the current client (null when
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
@@ -149,6 +164,7 @@ export function WidgetProvider({
     // new lazy connect on the next send.
     hasUserSentRef.current = false;
     welcomeGateRef.current.close();
+    welcomeDroppedRef.current = false;
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
@@ -190,7 +206,10 @@ export function WidgetProvider({
               // are suppressed — the user should start with a clean slate. The
               // flag flips to true in sendMessage once they actually ask.
               // No welcome greeting is expected on restore, so enable send
-              // immediately.
+              // immediately AND pre-mark the welcome as already consumed so
+              // the first post-restore Chatbot `message` is treated as a real
+              // answer (not dropped as a late welcome).
+              welcomeDroppedRef.current = true;
               dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
@@ -238,41 +257,48 @@ export function WidgetProvider({
     });
     client.on("streaming_token", (e) => {
       // Agentforce streams the WELCOME message too, not just real answers.
-      // Pre-send (hasUserSentRef === false): these tokens belong to the
-      // welcome. Do nothing — keep the gate pending until the welcome's
-      // final `message` event lands, which drops it via the pre-send branch
-      // below. Closing the gate here on welcome tokens would mean a late-
-      // arriving welcome `message` finds pending=false post-send and
-      // falls through to SET_ANSWER, flashing the welcome in the UI
-      // before the real answer overwrites it.
-      // Post-send (hasUserSentRef === true): these tokens belong to the
-      // real answer. Close the gate (a no-op if already closed) and
-      // dispatch the token.
-      if (hasUserSentRef.current) {
-        welcomeGateRef.current.close();
-        dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
-      }
+      // Three states to think about:
+      //
+      //   pre-send (hasUserSentRef=false): welcome tokens. Drop. Keep the
+      //     gate pending so the `message` branch below closes it on the
+      //     welcome's final `message`.
+      //
+      //   post-send, welcome not yet dropped: still welcome tokens (slow
+      //     agent raced past the 5s timeout). Drop them too — appending
+      //     into streamingText would paint the welcome as the answer.
+      //
+      //   post-send, welcome already dropped: real answer tokens. Append.
+      if (!hasUserSentRef.current) return;
+      if (!welcomeDroppedRef.current) return;
+      welcomeGateRef.current.close();
+      dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
       const isChatbot = e.sender.role !== "EndUser";
       if (!hasUserSentRef.current) {
         // Gate closed — drop everything. If this is the welcome (Chatbot),
-        // also resolve the welcome gate and enable the send button.
+        // also resolve the welcome gate, mark the welcome consumed, and
+        // enable the send button.
         if (welcomeGateRef.current.pending && isChatbot) {
           if (welcomeTimeoutRef.current) {
             clearTimeout(welcomeTimeoutRef.current);
             welcomeTimeoutRef.current = null;
           }
           welcomeGateRef.current.close();
+          welcomeDroppedRef.current = true;
           dispatch({ type: "SET_CONNECTION_READY", ready: true });
         }
         return;
       }
-      // Gate open — but the welcome may still arrive here (Agent B emits it
-      // after the user sends, OR a sendMessage() that did NOT await the gate
-      // got here first). The EndUser echo passes through; the first Chatbot
-      // message while the gate is pending is the welcome — skip it.
-      if (welcomeGateRef.current.pending && isChatbot) {
+      // Post-send. The EndUser echo passes through untouched. For Chatbot
+      // messages, the FIRST one we see is the welcome — regardless of
+      // whether the gate is still pending (fast agent, both landed before
+      // timeout) or already closed (slow agent, timeout fired and we
+      // POSTed, then the welcome arrived late). welcomeDroppedRef is the
+      // durable "has the welcome been consumed yet?" flag that outlives
+      // the gate's timeout and tells us which Chatbot message is real.
+      if (isChatbot && !welcomeDroppedRef.current) {
+        welcomeDroppedRef.current = true;
         welcomeGateRef.current.close();
         return;
       }
@@ -297,6 +323,7 @@ export function WidgetProvider({
         clearSession(sessionKey);
         hasUserSentRef.current = false;
         welcomeGateRef.current.close();
+        welcomeDroppedRef.current = false;
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
@@ -458,6 +485,7 @@ export function WidgetProvider({
       clearSession(sessionKey);
       hasUserSentRef.current = false;
       welcomeGateRef.current.close();
+      welcomeDroppedRef.current = false;
       connectPromiseRef.current = null;
 
       try {
