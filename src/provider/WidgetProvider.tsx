@@ -8,6 +8,7 @@ import { buildSessionKey, clearSession, loadSession, saveSession } from "./sessi
 import type { WidgetConfig } from "./types";
 import { resolveProductId, withProductContext } from "./product-context";
 import { createWelcomeGate } from "./welcome-gate";
+import { classifyMessage, shouldAppendStreamingToken } from "./welcome-tracker";
 
 function isMessageTooLong(err: unknown): boolean {
   return (
@@ -255,64 +256,48 @@ export function WidgetProvider({
     client.on("typing_stopped", () => {
       if (hasUserSentRef.current) dispatch({ type: "SET_AGENT_TYPING", typing: false });
     });
+    // Behavior lives in src/provider/welcome-tracker.ts (pure, unit-tested).
+    // These handlers are the thin edge that translates classifier verdicts
+    // into ref writes + reducer dispatches. If a welcome-handoff bug ever
+    // reappears, the regression test goes in welcome-tracker.test.ts first.
     client.on("streaming_token", (e) => {
-      // Agentforce streams the WELCOME message too, not just real answers.
-      // Three states to think about:
-      //
-      //   pre-send (hasUserSentRef=false): welcome tokens. Drop. Keep the
-      //     gate pending so the `message` branch below closes it on the
-      //     welcome's final `message`.
-      //
-      //   post-send, welcome not yet dropped: still welcome tokens (slow
-      //     agent raced past the 5s timeout). Drop them too — appending
-      //     into streamingText would paint the welcome as the answer.
-      //
-      //   post-send, welcome already dropped: real answer tokens. Append.
-      if (!hasUserSentRef.current) return;
-      if (!welcomeDroppedRef.current) return;
+      if (
+        !shouldAppendStreamingToken({
+          hasUserSent: hasUserSentRef.current,
+          welcomeDropped: welcomeDroppedRef.current,
+        })
+      ) {
+        return;
+      }
       welcomeGateRef.current.close();
       dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
     client.on("message", (e) => {
-      const isChatbot = e.sender.role !== "EndUser";
-      if (!hasUserSentRef.current) {
-        // Pre-send: ANY Chatbot message is the welcome (the user hasn't
-        // engaged yet, so nothing else can be here). Flip the durable
-        // welcomeDropped flag so a post-send real answer isn't mistaken
-        // for the welcome. If the gate is still pending (fast welcome),
-        // also resolve it + enable send; if it's already closed (timeout
-        // fired and the welcome is landing late), the gate work is a
-        // no-op but we STILL need to flip welcomeDroppedRef — this was
-        // the exact window a prior iteration missed, which caused a
-        // slow-agent welcome to leak into the post-send branch below
-        // and swallow the real answer.
-        if (isChatbot) {
-          welcomeDroppedRef.current = true;
-          if (welcomeGateRef.current.pending) {
-            if (welcomeTimeoutRef.current) {
-              clearTimeout(welcomeTimeoutRef.current);
-              welcomeTimeoutRef.current = null;
-            }
-            welcomeGateRef.current.close();
-            dispatch({ type: "SET_CONNECTION_READY", ready: true });
-          }
-        }
-        // EndUser echo (if any) is harmless pre-send — nothing is rendered
-        // until the user actually sends.
-        return;
-      }
-      // Post-send. The EndUser echo passes through untouched. For Chatbot
-      // messages, the FIRST one we see is the welcome ONLY when the
-      // pre-send branch above hasn't already consumed one (slow agent,
-      // timeout fired and we POSTed before the welcome arrived AT ALL —
-      // welcome then arrives post-send, this branch catches it).
-      // welcomeDroppedRef is the durable "has the welcome been consumed
-      // yet?" flag that outlives the gate's 5s timeout.
-      if (isChatbot && !welcomeDroppedRef.current) {
+      const sender = e.sender.role === "EndUser" ? "end-user" : "chatbot";
+      const verdict = classifyMessage(sender, {
+        hasUserSent: hasUserSentRef.current,
+        welcomeDropped: welcomeDroppedRef.current,
+        gatePending: welcomeGateRef.current.pending,
+      });
+      if (verdict.action === "ignore") return;
+      if (verdict.action === "drop-welcome") {
         welcomeDroppedRef.current = true;
-        welcomeGateRef.current.close();
+        if (verdict.wasPending) {
+          if (welcomeTimeoutRef.current) {
+            clearTimeout(welcomeTimeoutRef.current);
+            welcomeTimeoutRef.current = null;
+          }
+          welcomeGateRef.current.close();
+          dispatch({ type: "SET_CONNECTION_READY", ready: true });
+        } else {
+          // Post-send late welcome: gate already closed on timeout, send
+          // button already re-enabled. Just make sure the gate's close
+          // state is settled (idempotent).
+          welcomeGateRef.current.close();
+        }
         return;
       }
+      // verdict.action === "render-answer"
       dispatch({ type: "SET_ANSWER", content: e.content });
     });
     client.on("session_ready", (e) => {
