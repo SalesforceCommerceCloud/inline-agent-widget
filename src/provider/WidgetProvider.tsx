@@ -237,12 +237,21 @@ export function WidgetProvider({
       if (hasUserSentRef.current) dispatch({ type: "SET_AGENT_TYPING", typing: false });
     });
     client.on("streaming_token", (e) => {
-      // Streaming tokens mean the agent is generating the real answer — the
-      // welcome either already arrived or isn't coming. Resolve the welcome
-      // gate so the real answer's final message event is never dropped AND
-      // any sendMessage() awaiter proceeds (lazy-send path).
-      welcomeGateRef.current.close();
-      if (hasUserSentRef.current) dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
+      // Agentforce streams the WELCOME message too, not just real answers.
+      // Pre-send (hasUserSentRef === false): these tokens belong to the
+      // welcome. Do nothing — keep the gate pending until the welcome's
+      // final `message` event lands, which drops it via the pre-send branch
+      // below. Closing the gate here on welcome tokens would mean a late-
+      // arriving welcome `message` finds pending=false post-send and
+      // falls through to SET_ANSWER, flashing the welcome in the UI
+      // before the real answer overwrites it.
+      // Post-send (hasUserSentRef === true): these tokens belong to the
+      // real answer. Close the gate (a no-op if already closed) and
+      // dispatch the token.
+      if (hasUserSentRef.current) {
+        welcomeGateRef.current.close();
+        dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
+      }
     });
     client.on("message", (e) => {
       const isChatbot = e.sender.role !== "EndUser";
@@ -385,6 +394,13 @@ export function WidgetProvider({
     // Clear the previous answer immediately so the UI reacts to the send even if
     // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
+    // Show the typing dots on send INTENT, not on SSE `typing_started`. On a
+    // cold first click the handshake takes ~1-2s before any SSE event lands;
+    // waiting for `typing_started` leaves the UI frozen that whole time. The
+    // dots are the shopper's "I heard you" acknowledgement. They naturally
+    // hide once streaming starts (Response.tsx: showTyping = agentTyping &&
+    // !showStreaming). Cleared on every error-return path below.
+    dispatch({ type: "SET_AGENT_TYPING", typing: true });
 
     const messageBody =
       withProductContext(
@@ -427,6 +443,7 @@ export function WidgetProvider({
     } catch (firstErr) {
       // 400 = client input problem (message too long) — don't retry.
       if (isMessageTooLong(firstErr)) {
+        dispatch({ type: "SET_AGENT_TYPING", typing: false });
         dispatch({ type: "SET_ERROR", error: toUserMessage(firstErr) });
         return false;
       }
@@ -450,13 +467,16 @@ export function WidgetProvider({
           // eslint-disable-next-line no-console
           console.error("[Agentforce] retry also failed:", retryErr);
         }
+        dispatch({ type: "SET_AGENT_TYPING", typing: false });
         dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
         dispatch({ type: "SET_STATUS", status: "disconnected" });
         return false;
       }
     }
 
-    // Bail if torn down while the send was in flight.
+    // Bail if torn down while the send was in flight. No need to clear
+    // typing here — the component already unmounted or is remounting; the
+    // state will be re-initialized from scratch.
     if (clientRef.current !== client) return false;
 
     persistenceRef.current?.save();

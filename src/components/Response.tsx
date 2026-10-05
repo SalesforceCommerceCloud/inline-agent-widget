@@ -9,21 +9,19 @@ export function Response() {
   const hasActivity =
     state.error || showTyping || showStreaming || state.answer !== null || state.lastQuestion !== null;
 
-  // Suppress the query echo when the question came from a pill — the pill
-  // itself is already visible and highlighted above the answer, so echoing
-  // the same text here is noise (see Chintan's PRD review). Typed messages
-  // still echo, matching the conversational pattern shoppers expect. A
-  // typed message whose text happens to match a pill verbatim is also
-  // suppressed; that edge case is acceptable.
-  const cameFromPill =
-    state.lastQuestion !== null && state.pdpQuestions.includes(state.lastQuestion);
-
   if (!hasActivity) return null;
 
   return (
     <div className="slot">
-      {state.lastQuestion !== null && !cameFromPill && (
-        <p className="query">{state.lastQuestion}</p>
+      {/* Right-aligned chat-bubble echo of the shopper's question. Rendered
+          for ALL sends (pill or typed) — the bubble is the north-star
+          acknowledgement surface and replaces pill highlighting. See the
+          Shiseido-Sandbox northstar design: dark pill-shaped bubble above
+          the answer card. */}
+      {state.lastQuestion !== null && (
+        <div className="user-bubble-row">
+          <div className="user-bubble">{state.lastQuestion}</div>
+        </div>
       )}
 
       {state.error && (

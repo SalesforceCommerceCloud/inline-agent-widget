@@ -26,6 +26,12 @@ describe("widgetReducer", () => {
       // pills until the first handshake completes — regression target.
       expect(initialWidgetState.connectionReady).toBe(true);
     });
+
+    it("exposes askedQuestions as an empty array (never undefined)", () => {
+      // QuestionPills filters pdpQuestions by `!askedQuestions.includes(q)`.
+      // Any non-array value here (undefined/null) throws at render.
+      expect(initialWidgetState.askedQuestions).toEqual([]);
+    });
   });
 
   describe("SET_PDP_QUESTIONS", () => {
@@ -101,6 +107,19 @@ describe("widgetReducer", () => {
       expect(next.error).toBeNull();
     });
 
+    it("clears askedQuestions so the new PDP's shelf is full again", () => {
+      // SPA PDP → PDP: pdpQuestions is swapped by the config-watching effect,
+      // and askedQuestions must reset so none of the new product's pills are
+      // pre-filtered out just because the shopper had asked a similar-looking
+      // question on the previous product.
+      const start: WidgetState = {
+        ...initialWidgetState,
+        askedQuestions: ["Q1", "Q2"],
+      };
+      const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
+      expect(next.askedQuestions).toEqual([]);
+    });
+
     it("leaves status + connectionReady untouched (connection outlives nav)", () => {
       // The SCRT2 session is reused across PDPs — RESET_CONVERSATION is a
       // UI-level reset only, not a session teardown.
@@ -132,12 +151,54 @@ describe("widgetReducer", () => {
 
     it("leaves pdpQuestions in place (pill click is still an ASK_QUESTION)", () => {
       // Pill click paths through sendMessage → ASK_QUESTION dispatch. If this
-      // wipes pdpQuestions, the pills vanish the instant a pill is clicked
-      // instead of after the shopper has engaged — QuestionPills.hasEngaged
-      // relies on lastQuestion to hide, not on pdpQuestions becoming empty.
+      // wipes pdpQuestions, every pill vanishes the instant any one is clicked.
+      // Draining is done at the render layer via askedQuestions filtering.
       const start: WidgetState = { ...initialWidgetState, pdpQuestions: ["Q1", "Q2"] };
       const next = widgetReducer(start, { type: "ASK_QUESTION", question: "Q1" });
       expect(next.pdpQuestions).toEqual(["Q1", "Q2"]);
+    });
+
+    it("appends the question to askedQuestions so the pill drains from the shelf", () => {
+      // North-star drain: QuestionPills hides a pill once its text appears in
+      // askedQuestions. The reducer is the single source of truth for that
+      // list — pill component is pure render.
+      const start: WidgetState = { ...initialWidgetState, pdpQuestions: ["Q1", "Q2"] };
+      const next = widgetReducer(start, { type: "ASK_QUESTION", question: "Q1" });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
+
+    it("accumulates asked questions across multiple sends", () => {
+      const s1 = widgetReducer(initialWidgetState, { type: "ASK_QUESTION", question: "Q1" });
+      const s2 = widgetReducer(s1, { type: "ASK_QUESTION", question: "Q2" });
+      const s3 = widgetReducer(s2, { type: "ASK_QUESTION", question: "Q3" });
+      expect(s3.askedQuestions).toEqual(["Q1", "Q2", "Q3"]);
+    });
+
+    it("dedupes a verbatim re-ask so the array stays bounded", () => {
+      // A shopper retyping an identical question (or re-clicking the same pill
+      // after a reset) must not grow the list — the filter would still drop
+      // the pill correctly, but the array would leak unbounded over long
+      // sessions.
+      const start: WidgetState = {
+        ...initialWidgetState,
+        askedQuestions: ["Q1"],
+      };
+      const next = widgetReducer(start, { type: "ASK_QUESTION", question: "Q1" });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+      // Same reference — no needless re-allocation.
+      expect(next.askedQuestions).toBe(start.askedQuestions);
+    });
+
+    it("records typed free-text (even though it won't match any pill)", () => {
+      // Recording typed questions is harmless (they won't match a pdpQuestions
+      // string) and keeps the reducer branch dead-simple — no special-casing
+      // for the origin of the question.
+      const start: WidgetState = { ...initialWidgetState, pdpQuestions: ["Q1"] };
+      const next = widgetReducer(start, {
+        type: "ASK_QUESTION",
+        question: "something freeform",
+      });
+      expect(next.askedQuestions).toEqual(["something freeform"]);
     });
   });
 

@@ -26,9 +26,15 @@ export function App({
           </div>
           <span className="widget-badge">New</span>
         </header>
+        {/* North-star layout: InputBar first, then the answer surface
+            (user bubble + agent answer), then the pill shelf below the
+            answer. The pill shelf drains as the shopper asks questions
+            (QuestionPills filters askedQuestions); when exhausted, the
+            InputBar carries the shopper forward until Shilpi's follow-up
+            pills replace the shelf. */}
         <InputBar />
-        <QuestionPills />
         <Response />
+        <QuestionPills />
       </div>
     </WidgetProvider>
   );

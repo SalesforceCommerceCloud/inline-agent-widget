@@ -19,6 +19,17 @@ export interface WidgetConfig {
   placeholder?: string;
 
   /**
+   * Current PDP product name, used to template the InputBar placeholder as
+   * `"Ask me anything about <productName>"`. When unset, the InputBar falls
+   * back to `placeholder` (or the generic default). Sourced from SCAPI's
+   * `name` field on the Shopper Products response; the PWA Kit / SFRA shim
+   * passes it through on PDP mount and updates it on variant / SPA nav.
+   * The widget does not read product data itself — it only renders what the
+   * host passes.
+   */
+  productName?: string;
+
+  /**
    * PDP product-context (never shown to the user). When set, the widget derives
    * the current product id from the page URL and prepends
    * `"Viewing product details for: <id>"` to the message SENT to the agent.
@@ -94,6 +105,17 @@ export interface WidgetState {
   connectionReady: boolean;
   /** Opener question pills for the current product. Empty when unset. */
   pdpQuestions: string[];
+  /**
+   * Questions the shopper has already asked in this PDP session. QuestionPills
+   * filters these out so the shopper is never shown a pill they already
+   * clicked (addresses "stale pill" concern — the answer is already above).
+   * Reset on PDP navigation via RESET_CONVERSATION. On every ASK_QUESTION the
+   * question text is appended (deduped); the match in QuestionPills is by
+   * exact string equality against pdpQuestions, so a typed free-text question
+   * has no effect on the pill shelf. Once Shilpi's follow-up pills land, this
+   * list also feeds "filter already-asked from follow-up suggestions" for free.
+   */
+  askedQuestions: string[];
 }
 
 export type WidgetAction =

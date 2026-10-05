@@ -16,6 +16,13 @@
   --iaw-accent-fg: #ffffff;
   --iaw-muted: #6b7280;
   --iaw-error: #b42318;
+  /* Right-aligned user bubble (shopper's question echo). Northstar is the
+   * dark accent pill (Shiseido-Sandbox); separate vars so merchants can
+   * re-skin the bubble without pulling the whole accent across the UI. */
+  --iaw-user-bubble-bg: var(--iaw-accent);
+  --iaw-user-bubble-fg: var(--iaw-accent-fg);
+  /* Legacy name retained for hosts that may have overridden it before the
+   * north-star pivot. Unused by current CSS. Safe to drop in a future bump. */
   --iaw-query-bg: #dbeafe;
   --iaw-answer-bg: #ffffff;
   --iaw-pill-bg: #ffffff;
@@ -226,21 +233,11 @@
   cursor: not-allowed;
 }
 
-/* Selected state: the pill whose question produced the answer currently
- * shown below. Matches the Alexa-for-shopping "selected" treatment —
- * inverted bg/fg so the shopper can see which pill they most recently
- * asked. aria-pressed is set from state.lastQuestion in QuestionPills. */
-.pill[aria-pressed="true"] {
-  background: var(--iaw-accent);
-  color: var(--iaw-accent-fg);
-  border-color: var(--iaw-accent);
-}
+/* No pill selected-state in the north-star layout: the right-aligned user
+ * bubble above the answer carries the "which question am I looking at?"
+ * acknowledgement. See QuestionPills.tsx JSDoc. */
 
-.pill[aria-pressed="true"]:hover:not(:disabled) {
-  background: var(--iaw-accent);
-}
-
-/* ── Conversation slot: query bubble + answer card ── */
+/* ── Conversation slot: user bubble + answer card ── */
 .slot {
   display: flex;
   flex-direction: column;
@@ -248,14 +245,23 @@
   width: 100%;
 }
 
-.query {
-  align-self: flex-end;
+/* Right-aligned chat-bubble echo of the shopper's question. Flex-row wrapper
+ * pushes the bubble to the right; the bubble itself is a dark pill-shaped
+ * container matching the Shiseido-Sandbox northstar. Rendered for every send
+ * (pill or typed) — see Response.tsx. */
+.user-bubble-row {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.user-bubble {
   max-width: 80%;
   margin: 0;
-  padding: 12px 20px;
-  background: var(--iaw-query-bg);
-  border-radius: var(--iaw-radius);
-  color: var(--iaw-fg);
+  padding: 10px 16px;
+  background: var(--iaw-user-bubble-bg);
+  color: var(--iaw-user-bubble-fg);
+  border-radius: 9999px;
   font-size: 14px;
   line-height: 20px;
   text-align: left;

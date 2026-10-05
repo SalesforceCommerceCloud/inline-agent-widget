@@ -54,7 +54,19 @@ export function InputBar() {
         value={text}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        placeholder={config.placeholder ?? "Ask me anything"}
+        placeholder={
+          // Precedence: explicit `placeholder` config (host override) wins —
+          // merchants / PWA Kit's COMMERCE_AGENT_SETTINGS can force a specific
+          // string. Otherwise, if a product name was passed in, template it
+          // into the north-star hint ("Ask me anything about <productName>").
+          // Final fallback is the generic text — needed for non-PDP contexts
+          // and for the brief window on first load before the product fetch
+          // resolves.
+          config.placeholder ??
+          (config.productName
+            ? `Ask me anything about ${config.productName}`
+            : "Ask me anything")
+        }
         aria-label="Ask a question"
         disabled={busy}
       />
