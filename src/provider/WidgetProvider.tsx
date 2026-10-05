@@ -276,27 +276,38 @@ export function WidgetProvider({
     client.on("message", (e) => {
       const isChatbot = e.sender.role !== "EndUser";
       if (!hasUserSentRef.current) {
-        // Gate closed — drop everything. If this is the welcome (Chatbot),
-        // also resolve the welcome gate, mark the welcome consumed, and
-        // enable the send button.
-        if (welcomeGateRef.current.pending && isChatbot) {
-          if (welcomeTimeoutRef.current) {
-            clearTimeout(welcomeTimeoutRef.current);
-            welcomeTimeoutRef.current = null;
-          }
-          welcomeGateRef.current.close();
+        // Pre-send: ANY Chatbot message is the welcome (the user hasn't
+        // engaged yet, so nothing else can be here). Flip the durable
+        // welcomeDropped flag so a post-send real answer isn't mistaken
+        // for the welcome. If the gate is still pending (fast welcome),
+        // also resolve it + enable send; if it's already closed (timeout
+        // fired and the welcome is landing late), the gate work is a
+        // no-op but we STILL need to flip welcomeDroppedRef — this was
+        // the exact window a prior iteration missed, which caused a
+        // slow-agent welcome to leak into the post-send branch below
+        // and swallow the real answer.
+        if (isChatbot) {
           welcomeDroppedRef.current = true;
-          dispatch({ type: "SET_CONNECTION_READY", ready: true });
+          if (welcomeGateRef.current.pending) {
+            if (welcomeTimeoutRef.current) {
+              clearTimeout(welcomeTimeoutRef.current);
+              welcomeTimeoutRef.current = null;
+            }
+            welcomeGateRef.current.close();
+            dispatch({ type: "SET_CONNECTION_READY", ready: true });
+          }
         }
+        // EndUser echo (if any) is harmless pre-send — nothing is rendered
+        // until the user actually sends.
         return;
       }
       // Post-send. The EndUser echo passes through untouched. For Chatbot
-      // messages, the FIRST one we see is the welcome — regardless of
-      // whether the gate is still pending (fast agent, both landed before
-      // timeout) or already closed (slow agent, timeout fired and we
-      // POSTed, then the welcome arrived late). welcomeDroppedRef is the
-      // durable "has the welcome been consumed yet?" flag that outlives
-      // the gate's timeout and tells us which Chatbot message is real.
+      // messages, the FIRST one we see is the welcome ONLY when the
+      // pre-send branch above hasn't already consumed one (slow agent,
+      // timeout fired and we POSTed before the welcome arrived AT ALL —
+      // welcome then arrives post-send, this branch catches it).
+      // welcomeDroppedRef is the durable "has the welcome been consumed
+      // yet?" flag that outlives the gate's 5s timeout.
       if (isChatbot && !welcomeDroppedRef.current) {
         welcomeDroppedRef.current = true;
         welcomeGateRef.current.close();
@@ -331,8 +342,21 @@ export function WidgetProvider({
         dispatch({ type: "SET_CONNECTION_READY", ready: true });
         return;
       }
-      dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
-      if (e.recoverable === false) clearSession(sessionKey);
+      // Only surface non-recoverable errors to the shopper. Recoverable SDK
+      // errors (transient SSE drops, reconnect-in-progress) are internal
+      // bookkeeping — the SDK handles them silently and the stream resumes.
+      // Showing a red "Something went wrong" banner for a reconnect would
+      // also wipe lastQuestion + answer via the SET_ERROR reducer branch,
+      // visibly swallowing the shopper's bubble + the in-flight response.
+      // sendMessage()'s own retry path still catches terminal failures of
+      // the user's POST and surfaces them from there.
+      if (e.recoverable === false) {
+        clearSession(sessionKey);
+        dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
+      } else if (enableLogging) {
+        // eslint-disable-next-line no-console
+        console.warn(`[Agentforce] recoverable error (${e.code}) — SDK will retry silently`);
+      }
     });
 
     return () => {
