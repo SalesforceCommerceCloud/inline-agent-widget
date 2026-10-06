@@ -15,13 +15,12 @@ export interface ProductContextConfig {
   productIdPattern?: string;
 }
 
-const PDP_INLINE_CONTEXT_MESSAGE =
-  "This is the product details page the user is currently looking at";
+export const COMMERCE_AGENT_CONTEXT_VERSION = "1.0.0";
 
-export interface EmbeddedAgentContext {
+export interface CommerceAgentContext {
+  version: string;
   page_context_type: string;
-  page_context_message: string;
-  page_context_data: string;
+  page_context_data: { id: string };
 }
 
 /**
@@ -104,17 +103,17 @@ export function resolveProductId(
   return readPidFromDom();
 }
 
-/** Build the single embedded_agent_context variable expected by the inline PDP agent. */
+/** Build the single commerce_agent_context variable expected by the inline PDP agent. */
 export function buildPdpInlineContext(productId: string): SessionContextVariable[] {
-  const context: EmbeddedAgentContext = {
+  const context: CommerceAgentContext = {
+    version: COMMERCE_AGENT_CONTEXT_VERSION,
     page_context_type: "pdp_inline",
-    page_context_message: PDP_INLINE_CONTEXT_MESSAGE,
-    page_context_data: JSON.stringify({ id: productId }),
+    page_context_data: { id: productId },
   };
 
   return [
     {
-      name: "agent_context",
+      name: "commerce_agent_context",
       value: { valueType: "TextValue", textValue: JSON.stringify(context) },
     },
   ];
