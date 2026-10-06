@@ -28,6 +28,7 @@ export type {
   AgentforceDisconnectedEvent,
   AgentforceReconnectingEvent,
   AgentforceErrorEvent,
+  AgentforceSessionReadyEvent,
   AgentforceSender,
   AccessTokenRequest,
   AccessTokenResponse,

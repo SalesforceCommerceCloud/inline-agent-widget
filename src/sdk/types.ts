@@ -71,6 +71,7 @@ export type AgentforceEventName =
   | "streaming_token"
   | "typing_started"
   | "typing_stopped"
+  | "session_ready"
   | "error";
 
 /**
@@ -138,6 +139,16 @@ export interface AgentforceReconnectingEvent {
 }
 
 /**
+ * Payload for 'session_ready' events.
+ * Emitted when the SCRT2 MessagingSession ID (0Mw prefix) is captured from
+ * a CONVERSATION_SESSION_STATUS_CHANGED SSE event.
+ */
+export interface AgentforceSessionReadyEvent {
+  conversationId: string;
+  messagingSessionId: string;
+}
+
+/**
  * Payload for 'error' events.
  */
 export interface AgentforceErrorEvent {
@@ -165,6 +176,7 @@ export interface AgentforceEventMap {
   streaming_token: AgentforceStreamingTokenEvent;
   typing_started: AgentforceTypingEvent;
   typing_stopped: AgentforceTypingEvent;
+  session_ready: AgentforceSessionReadyEvent;
   error: AgentforceErrorEvent;
 }
 

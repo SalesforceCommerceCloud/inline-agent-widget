@@ -60,6 +60,7 @@ export class AgentforceClient extends TypedEventEmitter {
   private _accessToken: string | null = null;
   private _tokenExpiresAt: number = 0; // epoch ms
   private _conversationId: string | null = null;
+  private _messagingSessionId: string | null = null;
   private _lastEventId: string | null = null;
   private _isConnected = false;
   private sseReader: SSEReader | null = null;
@@ -105,6 +106,12 @@ export class AgentforceClient extends TypedEventEmitter {
   /** The current conversation ID, or null if no conversation is active. */
   get conversationId(): string | null {
     return this._conversationId;
+  }
+
+  /** The Salesforce MessagingSession ID (0Mw prefix), or null until the SSE
+   *  stream delivers a CONVERSATION_SESSION_STATUS_CHANGED event. */
+  get messagingSessionId(): string | null {
+    return this._messagingSessionId;
   }
 
   /** The current access token, or null if not yet authenticated. */
@@ -336,6 +343,7 @@ export class AgentforceClient extends TypedEventEmitter {
 
     const convId = this._conversationId;
     this._conversationId = null;
+    this._messagingSessionId = null;
 
     try {
       await this.executeRequest(
@@ -504,6 +512,9 @@ export class AgentforceClient extends TypedEventEmitter {
       case "CONVERSATION_TYPING_STOPPED_INDICATOR":
         this.handleTypingStopped(data);
         break;
+      case "CONVERSATION_SESSION_STATUS_CHANGED":
+        this.handleSessionStatusChanged(data);
+        break;
       default:
         this.logger.debug(`Unhandled SSE event type: ${eventType}`);
         break;
@@ -621,6 +632,22 @@ export class AgentforceClient extends TypedEventEmitter {
           }
         : undefined,
     });
+  }
+
+  private handleSessionStatusChanged(data: SSEEventData): void {
+    const entry = data.conversationEntry;
+    if (!entry) return;
+
+    const entryPayload = this.parseEntryPayload(entry);
+    const sessionId = entryPayload.sessionId;
+    if (typeof sessionId === "string" && sessionId.startsWith("0Mw")) {
+      this._messagingSessionId = sessionId;
+      this.logger.info(`MessagingSession ID captured: ${sessionId}`);
+      this.emit("session_ready", {
+        conversationId: this._conversationId || "",
+        messagingSessionId: sessionId,
+      });
+    }
   }
 
   // ─── REST Helpers ───────────────────────────────────────────────────────────
