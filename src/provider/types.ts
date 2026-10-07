@@ -30,16 +30,17 @@ export interface WidgetConfig {
   productName?: string;
 
   /**
-   * PDP product-context (never shown to the user). When set, the widget derives
-   * the current product id from the page URL and prepends
-   * `"Viewing product details for: <id>"` to the message SENT to the agent.
+   * PDP product-context (never shown to the user). The widget derives the
+   * current product id from the page URL and attaches the agent's `pdp_inline`
+   * external variables to each SCRT2 Send Message request. Shopper text is sent
+   * unchanged.
    *
    * `productIdParam` reads a URL query-string parameter (e.g. `"pid"` for the
    * SFRA `Product-Show` controller). `productIdPattern` is a regex matched
    * against the URL path whose first capture group is the id (e.g.
    * `"/product/([^/?#]+)"` for PWA Kit path routes); it is used when
    * `productIdParam` is absent or does not match. If neither resolves an id, the
-   * message is sent unprefixed. See `provider/product-context.ts`.
+   * message is sent without PDP context. See `provider/product-context.ts`.
    */
   productIdParam?: string;
   productIdPattern?: string;

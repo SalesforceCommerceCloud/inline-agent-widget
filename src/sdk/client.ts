@@ -13,7 +13,9 @@ import type {
   AccessTokenRequest,
   AccessTokenResponse,
   CreateConversationRequest,
+  SessionContextVariable,
   SendMessageRequest,
+  SendMessageResponse,
   SSEEventData,
   ConversationEntry,
   RequestOptions,
@@ -80,7 +82,7 @@ export class AgentforceClient extends TypedEventEmitter {
       reconnectDelay: options.reconnectDelay ?? 2000,
       enableLogging: options.enableLogging ?? false,
       platform: options.platform ?? "Web",
-      capabilitiesVersion: options.capabilitiesVersion ?? "1",
+      capabilitiesVersion: options.capabilitiesVersion ?? "65",
     };
 
     this.maxRetries = tuning.maxRetries;
@@ -263,8 +265,14 @@ export class AgentforceClient extends TypedEventEmitter {
    * Send a text message in the current conversation.
    *
    * @param text - The message text to send.
+   * @param contextVariables - Optional external Agentforce variables for this
+   *                           turn. SCRT2 session context is ephemeral, so pass
+   *                           them again on every applicable message.
    */
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(
+    text: string,
+    contextVariables?: readonly SessionContextVariable[],
+  ): Promise<void> {
     this.assertConnected();
     if (!this._conversationId) {
       throw new AgentforceClientError(
@@ -283,12 +291,32 @@ export class AgentforceClient extends TypedEventEmitter {
       esDeveloperName: this.esDeveloperName,
     };
 
+    if (contextVariables?.length) {
+      body.context = [
+        {
+          entryType: "SessionContext",
+          id: crypto.randomUUID(),
+          sessionContext: {
+            contextType: "SessionContextSet",
+            contextVariables: [...contextVariables],
+          },
+        },
+      ];
+    }
+
     try {
-      await this.executeRequest(
+      const response = await this.executeRequest<SendMessageResponse | null>(
         "POST",
         `/iamessage/api/v2/conversation/${this._conversationId}/message`,
         body,
       );
+
+      if (response?.warning) {
+        this.logger.warn(
+          `Message accepted with context warning ${response.warning.warningCode}: ` +
+            response.warning.warningMessage,
+        );
+      }
     } catch (err) {
       // 400 = client input error (e.g. message too long) — the session is fine.
       if (err instanceof AgentforceApiError && err.statusCode === 400) throw err;

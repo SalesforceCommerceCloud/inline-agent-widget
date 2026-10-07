@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveProductId, withProductContext } from "../../src/provider/product-context";
+import {
+  buildPdpInlineContext,
+  resolveProductId,
+} from "../../src/provider/product-context";
 
 describe("resolveProductId", () => {
   it("reads the id from the configured query-string param (SFRA Product-Show shape)", () => {
@@ -97,14 +100,36 @@ describe("resolveProductId", () => {
   });
 });
 
-describe("withProductContext", () => {
-  it("prepends the exact hidden line and a blank line before the query", () => {
-    expect(withProductContext("is this waterproof?", "25752986M")).toBe(
-      "(Viewing product details for inline-widget: 25752986M)\n\nis this waterproof?",
-    );
+describe("buildPdpInlineContext", () => {
+  it("builds a single commerce_agent_context StructuredValue with the expected object", () => {
+    const context = buildPdpInlineContext("1050633A6D");
+    expect(context).toHaveLength(1);
+    expect(context[0].name).toBe("commerce_agent_context");
+    expect(context[0].value).toEqual({
+      valueType: "StructuredValue",
+      value: {
+        version: "1.0.0",
+        page_context_type: "pdp_inline",
+        page_context_data: { id: "1050633A6D" },
+      },
+    });
   });
 
-  it("returns the text unchanged when there is no product id", () => {
-    expect(withProductContext("hello", null)).toBe("hello");
+  it("preserves special characters in product ids", () => {
+    const productId = 'sku"\\\nnext';
+    const context = buildPdpInlineContext(productId);
+
+    const val = context[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    expect((val.value.page_context_data as { id: string }).id).toBe(productId);
+  });
+
+  it("uses the latest product id when context is rebuilt after navigation", () => {
+    const first = buildPdpInlineContext("PRODUCT-A");
+    const second = buildPdpInlineContext("PRODUCT-B");
+
+    const valA = first[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    const valB = second[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    expect((valA.value.page_context_data as { id: string }).id).toBe("PRODUCT-A");
+    expect((valB.value.page_context_data as { id: string }).id).toBe("PRODUCT-B");
   });
 });

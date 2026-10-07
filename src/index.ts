@@ -19,4 +19,8 @@ export {
   type AgentforceMessageEvent,
   type AgentforceStreamingTokenEvent,
   type AgentforceErrorEvent,
+  type SessionContextTextValue,
+  type SessionContextStructuredValue,
+  type SessionContextVariable,
 } from "./sdk";
+export type { CommerceAgentContext } from "./provider/product-context";

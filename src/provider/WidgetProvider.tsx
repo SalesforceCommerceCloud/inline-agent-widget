@@ -6,7 +6,7 @@ import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
-import { resolveProductId, withProductContext } from "./product-context";
+import { buildPdpInlineContext, resolveProductId } from "./product-context";
 import { createWelcomeGate } from "./welcome-gate";
 import { classifyMessage, shouldAppendStreamingToken } from "./welcome-tracker";
 
@@ -438,13 +438,14 @@ export function WidgetProvider({
     // !showStreaming). Cleared on every error-return path below.
     dispatch({ type: "SET_AGENT_TYPING", typing: true });
 
-    const messageBody =
-      withProductContext(
-        trimmed,
-        typeof window !== "undefined"
-          ? resolveProductId(window.location, productContextRef.current)
-          : null,
-      );
+    // Resolve the product id from the current URL immediately before each send.
+    // The agent resets these external variables after every turn, so PDP context
+    // must be attached to every applicable message. Off a PDP, context is
+    // omitted and the widget retains its general-chat behavior.
+    const productId =
+      typeof window !== "undefined"
+        ? resolveProductId(window.location, productContextRef.current)
+        : null;
 
     // connectAndSend handles one attempt: ensure the session is live, wait for
     // the welcome ticket to resolve, then send. On any non-400 failure the SDK
@@ -471,7 +472,10 @@ export function WidgetProvider({
       if (clientRef.current !== client) throw new Error("unmounted");
       await welcomeGateRef.current.wait();
       if (clientRef.current !== client) throw new Error("unmounted");
-      await client.sendMessage(messageBody);
+      await client.sendMessage(
+        trimmed,
+        productId ? buildPdpInlineContext(productId) : undefined,
+      );
     };
 
     try {
