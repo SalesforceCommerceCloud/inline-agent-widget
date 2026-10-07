@@ -216,16 +216,16 @@ describe("conversation lifecycle request bodies", () => {
     mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
     await client.createConversation();
 
-    const commerceContext = JSON.stringify({
+    const commerceContext = {
       version: "1.0.0",
       page_context_type: "pdp_inline",
       page_context_data: { id: "1050633A6D" },
-    });
+    };
 
     await client.sendMessage("Is this waterproof?", [
       {
         name: "commerce_agent_context",
-        value: { valueType: "TextValue", textValue: commerceContext },
+        value: { valueType: "StructuredValue", value: commerceContext },
       },
     ]);
 
@@ -249,7 +249,7 @@ describe("conversation lifecycle request bodies", () => {
             contextVariables: [
               {
                 name: "commerce_agent_context",
-                value: { valueType: "TextValue", textValue: commerceContext },
+                value: { valueType: "StructuredValue", value: commerceContext },
               },
             ],
           },

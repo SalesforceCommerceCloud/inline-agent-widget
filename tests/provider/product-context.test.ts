@@ -101,32 +101,35 @@ describe("resolveProductId", () => {
 });
 
 describe("buildPdpInlineContext", () => {
-  it("builds a single commerce_agent_context variable with the expected JSON object", () => {
+  it("builds a single commerce_agent_context StructuredValue with the expected object", () => {
     const context = buildPdpInlineContext("1050633A6D");
     expect(context).toHaveLength(1);
     expect(context[0].name).toBe("commerce_agent_context");
-
-    const parsed = JSON.parse(context[0].value.textValue);
-    expect(parsed).toEqual({
-      version: "1.0.0",
-      page_context_type: "pdp_inline",
-      page_context_data: { id: "1050633A6D" },
+    expect(context[0].value).toEqual({
+      valueType: "StructuredValue",
+      value: {
+        version: "1.0.0",
+        page_context_type: "pdp_inline",
+        page_context_data: { id: "1050633A6D" },
+      },
     });
   });
 
-  it("JSON-encodes product ids instead of interpolating unsafe JSON", () => {
+  it("preserves special characters in product ids", () => {
     const productId = 'sku"\\\nnext';
     const context = buildPdpInlineContext(productId);
 
-    const parsed = JSON.parse(context[0].value.textValue);
-    expect(parsed.page_context_data).toEqual({ id: productId });
+    const val = context[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    expect((val.value.page_context_data as { id: string }).id).toBe(productId);
   });
 
   it("uses the latest product id when context is rebuilt after navigation", () => {
     const first = buildPdpInlineContext("PRODUCT-A");
     const second = buildPdpInlineContext("PRODUCT-B");
 
-    expect(JSON.parse(first[0].value.textValue).page_context_data.id).toBe("PRODUCT-A");
-    expect(JSON.parse(second[0].value.textValue).page_context_data.id).toBe("PRODUCT-B");
+    const valA = first[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    const valB = second[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    expect((valA.value.page_context_data as { id: string }).id).toBe("PRODUCT-A");
+    expect((valB.value.page_context_data as { id: string }).id).toBe("PRODUCT-B");
   });
 });

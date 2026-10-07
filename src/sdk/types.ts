@@ -215,10 +215,16 @@ export interface SessionContextTextValue {
   textValue: string;
 }
 
+/** An object-valued external Agentforce variable in SCRT2 session context. */
+export interface SessionContextStructuredValue {
+  valueType: "StructuredValue";
+  value: Record<string, unknown>;
+}
+
 /** A named external Agentforce variable sent for the current turn. */
 export interface SessionContextVariable {
   name: string;
-  value: SessionContextTextValue;
+  value: SessionContextTextValue | SessionContextStructuredValue;
 }
 
 /** The SCRT2 envelope around per-turn Agentforce context variables. */

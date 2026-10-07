@@ -18,6 +18,7 @@ export interface ProductContextConfig {
 export const COMMERCE_AGENT_CONTEXT_VERSION = "1.0.0";
 
 export interface CommerceAgentContext {
+  [key: string]: unknown;
   version: string;
   page_context_type: string;
   page_context_data: { id: string };
@@ -114,7 +115,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
   return [
     {
       name: "commerce_agent_context",
-      value: { valueType: "TextValue", textValue: JSON.stringify(context) },
+      value: { valueType: "StructuredValue", value: context },
     },
   ];
 }

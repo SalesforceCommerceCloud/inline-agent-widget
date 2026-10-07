@@ -34,6 +34,7 @@ export type {
   AccessTokenResponse,
   CreateConversationRequest,
   SessionContextTextValue,
+  SessionContextStructuredValue,
   SessionContextVariable,
   SessionContextEntry,
   SendMessageRequest,
