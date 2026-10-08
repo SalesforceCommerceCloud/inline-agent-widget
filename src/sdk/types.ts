@@ -71,6 +71,7 @@ export type AgentforceEventName =
   | "streaming_token"
   | "typing_started"
   | "typing_stopped"
+  | "user_echo"
   | "session_ready"
   | "error";
 
@@ -121,6 +122,21 @@ export interface AgentforceStreamingTokenEvent {
 export interface AgentforceTypingEvent {
   conversationId: string;
   participant?: AgentforceSender;
+}
+
+/**
+ * Payload for 'user_echo' events.
+ * Emitted when SCRT2 echoes an EndUser CONVERSATION_MESSAGE — i.e. the
+ * shopper's own POST has been accepted and will appear in the stream.
+ * Carries the entry identifier that was supplied in the POST body, so
+ * callers can correlate a specific sendMessage() with its SSE arrival
+ * and use it as a stream-order cutoff between pre-POST (welcome) and
+ * post-POST (answer) Chatbot entries.
+ */
+export interface AgentforceUserEchoEvent {
+  conversationId: string;
+  messageId: string;
+  timestamp: string;
 }
 
 /**
@@ -176,6 +192,7 @@ export interface AgentforceEventMap {
   streaming_token: AgentforceStreamingTokenEvent;
   typing_started: AgentforceTypingEvent;
   typing_stopped: AgentforceTypingEvent;
+  user_echo: AgentforceUserEchoEvent;
   session_ready: AgentforceSessionReadyEvent;
   error: AgentforceErrorEvent;
 }
