@@ -7,7 +7,6 @@ import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
 import { buildPdpInlineContext, resolveProductId } from "./product-context";
-import { createWelcomeGate } from "./welcome-gate";
 import { classifyMessage, shouldAppendStreamingToken } from "./welcome-tracker";
 
 function isMessageTooLong(err: unknown): boolean {
@@ -25,6 +24,14 @@ function toUserMessage(err: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
+/** Buffered pre-echo Chatbot entry: we don't yet know the echo cutoff,
+ *  so we stash the message content + its server timestamp and replay
+ *  them through the classifier once user_echo lands. */
+interface BufferedMessage {
+  content: string;
+  timestamp: string;
+}
+
 export function WidgetProvider({
   config,
   children,
@@ -38,45 +45,25 @@ export function WidgetProvider({
 }) {
   const [state, dispatch] = useReducer(widgetReducer, initialWidgetState);
   const clientRef = useRef<AgentforceClient | null>(null);
-  // The agent auto-sends a welcome/greeting the moment a conversation opens. We
-  // don't want to surface anything the agent says before the user has actually
-  // engaged, so all agent-originated events are gated on this until the first
-  // user message is sent. A ref (not state) so the long-lived event handlers
-  // read the latest value without needing to re-register.
-  const hasUserSentRef = useRef(false);
   // Memoizes the in-flight lazy handshake (token → SSE → conversation) so
   // concurrent first sends share one attempt. Readiness itself is tracked by the
   // client's conversationId (see ensureConnected), not a separate flag.
   const connectPromiseRef = useRef<Promise<void> | null>(null);
-  // Safety timeout: if the welcome message hasn't arrived within 5s of
-  // the handshake starting, re-enable the send button anyway.
-  const welcomeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Welcome-greeting gate — SEND-SIDE guard only. `wait()` is awaited by
-  // sendMessage so the user POST is held until either the welcome has
-  // resolved or the 5s timeout fires, preventing a fast agent's real
-  // answer from being eaten as "the welcome" on a cold first send
-  // (classic "first-click never answers" bug). On a warm send (no
-  // handshake running), `wait()` is a resolved-microtask no-op.
-  // RECEIVE-SIDE "is the welcome consumed?" state lives in
-  // welcomeDroppedRef below, which outlives the timeout so a slow
-  // welcome that arrives post-POST is still correctly identified.
-  // Lazily-constructed via a ref so the gate's identity is stable
-  // across renders without rebuilding on every mount.
-  const welcomeGateRef = useRef(createWelcomeGate());
-  // Durable "has the welcome been consumed yet?" flag. The gate above is a
-  // SEND-SIDE guard (hold the user POST until the welcome has resolved OR the
-  // 5s timeout fires). This flag is a RECEIVE-SIDE guard that outlives the
-  // timeout: on a slow Agentforce (>5s to emit the welcome `message`), the
-  // gate closes on timeout, the user POST goes out, hasUserSentRef flips true
-  // — and then the late welcome `message` arrives. Without this flag, the
-  // message handler sees `hasUserSentRef=true` + `gate.pending=false` and
-  // falls through to SET_ANSWER, flashing the welcome as if it were the
-  // answer (observed in incognito-cold loads). Flipped true the first time
-  // we consume any Chatbot `message`, OR pre-set true on a successful
-  // tryRestore (no welcome is emitted on restore). Reset to false everywhere
-  // a fresh handshake is about to run (new client, SESSION_EXPIRED, retry
-  // prelude).
-  const welcomeDroppedRef = useRef(false);
+  // Server-authoritative cutoff: the EndUser echo's transcriptedTimestamp.
+  // Any Chatbot entry with ts <= cutoff is the pre-POST welcome; strictly
+  // after is the answer. Null until the first echo lands. Reset wherever a
+  // fresh handshake is about to run.
+  const echoCutoffRef = useRef<string | null>(null);
+  // Chatbot entries that arrived before the echo cutoff was known. Replayed
+  // through the classifier once echoCutoffRef is set. On a restored session
+  // we pre-mark the cutoff as a sentinel ("beginning of time") so replayed
+  // historical entries render as answers rather than being buffered.
+  const pendingChatbotBufferRef = useRef<BufferedMessage[]>([]);
+  // Safety timeout: if nothing has unblocked the input within 5s of the
+  // handshake starting, re-enable Send anyway. This is a UI-liveness
+  // concern only — correctness of welcome-vs-answer is handled by the
+  // echo cutoff above and does not depend on this firing.
+  const uiReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The session-persistence adapter for the current client (null when
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
@@ -104,10 +91,7 @@ export function WidgetProvider({
   }, [pdpQuestionsKey]);
 
   // The URL-based product-context config, held in a ref so the dependency-stable
-  // sendMessage callback (deps: []) reads the latest without being recreated —
-  // same rationale as hasUserSentRef / persistenceRef above. These fields do NOT
-  // affect the connection, so they are deliberately kept out of the client-
-  // building effect's deps (exactly like `placeholder`).
+  // sendMessage callback (deps: []) reads the latest without being recreated.
   const productContextRef = useRef({ productIdParam, productIdPattern });
   useEffect(() => {
     productContextRef.current = { productIdParam, productIdPattern };
@@ -161,17 +145,12 @@ export function WidgetProvider({
       },
     });
     clientRef.current = client;
-    // A fresh client has no session yet: suppress agent output and require a
-    // new lazy connect on the next send.
-    hasUserSentRef.current = false;
-    welcomeGateRef.current.close();
-    welcomeDroppedRef.current = false;
+    // Fresh client: no echo observed yet, buffer empty.
+    echoCutoffRef.current = null;
+    pendingChatbotBufferRef.current = [];
     connectPromiseRef.current = null;
 
     // Build the session-persistence adapter (or null when the feature is off).
-    // The key is namespaced by orgId + esDeveloperName so widgets/configs don't
-    // collide. tryRestore/save translate between the store and the client;
-    // both must never throw (ensureConnected relies on that).
     const sessionKey = buildSessionKey(orgId, esDeveloperName);
     const persistence: SessionPersistence | null = persistSession
       ? {
@@ -181,12 +160,6 @@ export function WidgetProvider({
               rejectReason = reason;
             });
             if (!stored) {
-              // Nothing usable to restore: loadSession reports precisely why
-              // (absent / wrong-origin, expired, malformed, …). We fall back to a
-              // fresh handshake, which mints a new token. Logged (never the token
-              // value) so an operator with logging on can tell an expected miss
-              // apart from a real bug — and, crucially, distinguish "absent"
-              // (e.g. seeded under a different origin/port) from "token-expired".
               if (enableLogging) {
                 // eslint-disable-next-line no-console
                 console.log(
@@ -202,22 +175,15 @@ export function WidgetProvider({
                 conversationId: stored.conversationId,
                 lastEventId: stored.lastEventId,
               });
-              // Restoring re-opens the SSE stream on an EXISTING conversation.
-              // Keep hasUserSentRef false so replayed SSE messages (old answer)
-              // are suppressed — the user should start with a clean slate. The
-              // flag flips to true in sendMessage once they actually ask.
-              // No welcome greeting is expected on restore, so enable send
-              // immediately AND pre-mark the welcome as already consumed so
-              // the first post-restore Chatbot `message` is treated as a real
-              // answer (not dropped as a late welcome).
-              welcomeDroppedRef.current = true;
+              // Restoring re-opens the SSE stream on an EXISTING conversation —
+              // no welcome will be emitted. Pre-set the cutoff to a sentinel
+              // in the past so any replayed historical Chatbot entry sorts
+              // AFTER it and renders as an answer (which matches the restored
+              // conversation's state).
+              echoCutoffRef.current = "0000-01-01T00:00:00.000Z";
               dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
-              // The stored token was valid by our checks but SSE refused it (or
-              // the network failed) — drop it and fall back to a fresh handshake.
-              // Distinct from the no-op above: this means restore was ATTEMPTED
-              // and failed, which is the signal that reuse isn't working.
               if (enableLogging) {
                 // eslint-disable-next-line no-console
                 console.warn(
@@ -238,67 +204,60 @@ export function WidgetProvider({
         }
       : null;
     persistenceRef.current = persistence;
-    // Stale entry from a previous run when the feature is off: proactively clear
-    // it so a dead token doesn't linger at a known key.
     if (!persistence) clearSession(sessionKey);
 
     // Register handlers now so no events are missed once we do connect.
     client.on("connected", () => dispatch({ type: "SET_STATUS", status: "connected" }));
     client.on("disconnected", () => dispatch({ type: "SET_STATUS", status: "disconnected" }));
     client.on("reconnecting", () => dispatch({ type: "SET_STATUS", status: "reconnecting" }));
-    // The four handlers below carry agent output. Ignore them until the user
-    // has sent a message — this drops the agent's automatic welcome greeting
-    // (and any typing indicator / streamed tokens that precede it) that the
-    // agent emits when the conversation is created on first send.
     client.on("typing_started", () => {
-      if (hasUserSentRef.current) dispatch({ type: "SET_AGENT_TYPING", typing: true });
+      // Only surface typing dots once the shopper has engaged (echo observed).
+      // Pre-echo typing is the agent composing the welcome, which we hide.
+      if (echoCutoffRef.current !== null) dispatch({ type: "SET_AGENT_TYPING", typing: true });
     });
     client.on("typing_stopped", () => {
-      if (hasUserSentRef.current) dispatch({ type: "SET_AGENT_TYPING", typing: false });
+      if (echoCutoffRef.current !== null) dispatch({ type: "SET_AGENT_TYPING", typing: false });
     });
-    // Behavior lives in src/provider/welcome-tracker.ts (pure, unit-tested).
-    // These handlers are the thin edge that translates classifier verdicts
-    // into ref writes + reducer dispatches. If a welcome-handoff bug ever
-    // reappears, the regression test goes in welcome-tracker.test.ts first.
+    // Streaming tokens: once the echo lands, SCRT2 delivers entries in server
+    // order over the SSE stream, so any subsequent streaming token belongs to
+    // the answer. Pre-echo tokens are the welcome being streamed — ignore.
+    // Behavior lives in welcome-tracker.ts (pure, unit-tested).
     client.on("streaming_token", (e) => {
-      if (
-        !shouldAppendStreamingToken({
-          hasUserSent: hasUserSentRef.current,
-          welcomeDropped: welcomeDroppedRef.current,
-        })
-      ) {
-        return;
-      }
-      welcomeGateRef.current.close();
+      if (!shouldAppendStreamingToken({ echoTimestamp: echoCutoffRef.current })) return;
       dispatch({ type: "APPEND_STREAMING_TOKEN", token: e.token });
     });
-    client.on("message", (e) => {
-      const sender = e.sender.role === "EndUser" ? "end-user" : "chatbot";
-      const verdict = classifyMessage(sender, {
-        hasUserSent: hasUserSentRef.current,
-        welcomeDropped: welcomeDroppedRef.current,
-        gatePending: welcomeGateRef.current.pending,
-      });
-      if (verdict.action === "ignore") return;
-      if (verdict.action === "drop-welcome") {
-        welcomeDroppedRef.current = true;
-        if (verdict.wasPending) {
-          if (welcomeTimeoutRef.current) {
-            clearTimeout(welcomeTimeoutRef.current);
-            welcomeTimeoutRef.current = null;
-          }
-          welcomeGateRef.current.close();
-          dispatch({ type: "SET_CONNECTION_READY", ready: true });
-        } else {
-          // Post-send late welcome: gate already closed on timeout, send
-          // button already re-enabled. Just make sure the gate's close
-          // state is settled (idempotent).
-          welcomeGateRef.current.close();
+    client.on("user_echo", (e) => {
+      // Server-authoritative cutoff for welcome-vs-answer. Set it, then drain
+      // anything we buffered pre-echo through the same classifier.
+      echoCutoffRef.current = e.timestamp;
+      if (uiReadyTimeoutRef.current) {
+        clearTimeout(uiReadyTimeoutRef.current);
+        uiReadyTimeoutRef.current = null;
+      }
+      dispatch({ type: "SET_CONNECTION_READY", ready: true });
+
+      const buffered = pendingChatbotBufferRef.current;
+      pendingChatbotBufferRef.current = [];
+      for (const m of buffered) {
+        const verdict = classifyMessage(m.timestamp, { echoTimestamp: e.timestamp });
+        if (verdict.action === "render-answer") {
+          dispatch({ type: "SET_ANSWER", content: m.content });
         }
+        // drop-welcome and (unreachable here) buffer: do nothing.
+      }
+    });
+    client.on("message", (e) => {
+      // EndUser echoes come through user_echo now; this handler sees only
+      // Chatbot (Agent / Supervisor / Chatbot role) entries.
+      if (echoCutoffRef.current === null) {
+        pendingChatbotBufferRef.current.push({ content: e.content, timestamp: e.timestamp });
         return;
       }
-      // verdict.action === "render-answer"
-      dispatch({ type: "SET_ANSWER", content: e.content });
+      const verdict = classifyMessage(e.timestamp, { echoTimestamp: echoCutoffRef.current });
+      if (verdict.action === "render-answer") {
+        dispatch({ type: "SET_ANSWER", content: e.content });
+      }
+      // drop-welcome: ignore. buffer: not reachable (cutoff is set).
     });
     client.on("session_ready", (e) => {
       if (hostElement) {
@@ -317,9 +276,8 @@ export function WidgetProvider({
     client.on("error", (e) => {
       if (e.code === "SESSION_EXPIRED") {
         clearSession(sessionKey);
-        hasUserSentRef.current = false;
-        welcomeGateRef.current.close();
-        welcomeDroppedRef.current = false;
+        echoCutoffRef.current = null;
+        pendingChatbotBufferRef.current = [];
         connectPromiseRef.current = null;
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
@@ -327,14 +285,6 @@ export function WidgetProvider({
         dispatch({ type: "SET_CONNECTION_READY", ready: true });
         return;
       }
-      // Only surface non-recoverable errors to the shopper. Recoverable SDK
-      // errors (transient SSE drops, reconnect-in-progress) are internal
-      // bookkeeping — the SDK handles them silently and the stream resumes.
-      // Showing a red "Something went wrong" banner for a reconnect would
-      // also wipe lastQuestion + answer via the SET_ERROR reducer branch,
-      // visibly swallowing the shopper's bubble + the in-flight response.
-      // sendMessage()'s own retry path still catches terminal failures of
-      // the user's POST and surfaces them from there.
       if (e.recoverable === false) {
         clearSession(sessionKey);
         dispatch({ type: "SET_ERROR", error: "Something went wrong. Please try again." });
@@ -347,25 +297,16 @@ export function WidgetProvider({
     return () => {
       client.off();
       if (conversationIdRef) conversationIdRef.current = null;
-      if (welcomeTimeoutRef.current) {
-        clearTimeout(welcomeTimeoutRef.current);
-        welcomeTimeoutRef.current = null;
+      if (uiReadyTimeoutRef.current) {
+        clearTimeout(uiReadyTimeoutRef.current);
+        uiReadyTimeoutRef.current = null;
       }
-      // Release any sendMessage() awaiter still blocked on the gate so it can
-      // observe the unmount check and bail cleanly (it won't dispatch either
-      // way — the clientRef !== client guard in connectAndSend catches it).
-      welcomeGateRef.current.close();
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
-      // — so a persisted session correctly survives to the next page. This only
-      // runs on a genuine unmount or a config-change remount.
+      // — so a persisted session correctly survives to the next page.
       const hadConversation = client.conversationId != null;
       void client.endConversation();
       client.disconnect();
-      // We deliberately ended an active conversation → the persisted token now
-      // points at a dead conversation, so drop it. Guarding on hadConversation
-      // avoids wiping a stored-but-not-yet-restored session during a lazy /
-      // StrictMode remount where no conversation exists yet.
       if (hadConversation) clearSession(sessionKey);
       if (clientRef.current === client) clientRef.current = null;
       if (persistenceRef.current === persistence) persistenceRef.current = null;
@@ -374,25 +315,16 @@ export function WidgetProvider({
 
   // Warm up the session (token → SSE → conversation) ahead of the first send —
   // called when the user starts typing, so the network latency is hidden behind
-  // their typing time. Idempotent and non-blocking: ensureConnected short-
-  // circuits once a conversation exists or an attempt is in flight, and any
-  // warm-up failure is swallowed here (the actual send retries and surfaces the
-  // error then). Crucially, the greeting the agent auto-sends on conversation
-  // creation arrives during this warm-up window, while hasUserSentRef is still
-  // false — so it is dropped by the handlers above before the user ever sends.
+  // their typing time. Idempotent and non-blocking.
   const onHandshakeStart = useCallback(() => {
     dispatch({ type: "SET_STATUS", status: "connecting" });
     dispatch({ type: "SET_CONNECTION_READY", ready: false });
-    welcomeGateRef.current.open();
-    if (welcomeTimeoutRef.current) clearTimeout(welcomeTimeoutRef.current);
-    welcomeTimeoutRef.current = setTimeout(() => {
-      welcomeTimeoutRef.current = null;
-      // Nothing came in 5s: close the gate (releases any sendMessage() awaiter
-      // on the lazy-send path, so the user POST goes out instead of hanging
-      // forever) and re-enable the Send button. Any Chatbot message that
-      // arrives after this is treated as the real answer (gate no longer
-      // pending), which is the right call for a silent agent.
-      welcomeGateRef.current.close();
+    if (uiReadyTimeoutRef.current) clearTimeout(uiReadyTimeoutRef.current);
+    uiReadyTimeoutRef.current = setTimeout(() => {
+      // UI-liveness fallback only. The echo cutoff is still null; any
+      // Chatbot entry that lands before the eventual echo (if any) is
+      // still buffered and will be classified correctly on arrival.
+      uiReadyTimeoutRef.current = null;
       dispatch({ type: "SET_CONNECTION_READY", ready: true });
     }, 5000);
   }, []);
@@ -427,15 +359,11 @@ export function WidgetProvider({
       return false;
     }
 
-    // Clear the previous answer immediately so the UI reacts to the send even if
-    // the handshake is still warming up (the message is effectively queued).
     dispatch({ type: "ASK_QUESTION", question: trimmed });
-    // Show the typing dots on send INTENT, not on SSE `typing_started`. On a
-    // cold first click the handshake takes ~1-2s before any SSE event lands;
-    // waiting for `typing_started` leaves the UI frozen that whole time. The
-    // dots are the shopper's "I heard you" acknowledgement. They naturally
-    // hide once streaming starts (Response.tsx: showTyping = agentTyping &&
-    // !showStreaming). Cleared on every error-return path below.
+    // Show typing on send INTENT so the UI acknowledges the click even while
+    // the handshake is warming up. Hides naturally once streaming starts
+    // (Response.tsx: showTyping = agentTyping && !showStreaming). Cleared on
+    // every error-return path below.
     dispatch({ type: "SET_AGENT_TYPING", typing: true });
 
     // Resolve the product id from the current URL immediately before each send.
@@ -447,20 +375,10 @@ export function WidgetProvider({
         ? resolveProductId(window.location, productContextRef.current)
         : null;
 
-    // connectAndSend handles one attempt: ensure the session is live, wait for
-    // the welcome ticket to resolve, then send. On any non-400 failure the SDK
-    // tears down the session, so a second call will do a fresh handshake
-    // transparently.
-    //
-    // Why await the welcome gate here: on a cold lazy-send (first click of a
-    // pill, or first Send on an untyped InputBar), ensureConnected() opens the
-    // gate, then returns. If we POST before the welcome has landed and been
-    // dropped by the handler, the agent's REAL answer can arrive first and get
-    // eaten as "the welcome" (classic first-click-no-answer bug). Awaiting the
-    // gate guarantees we POST only after the welcome has been dropped (fast
-    // agent), skipped (streaming started), or timed out (silent agent). On a
-    // warm send (handshake already complete, no gate open), the await is a
-    // no-op microtask.
+    // One attempt: ensure the session is live, then send. Pre-echo Chatbot
+    // entries buffer in the SSE handler; the user_echo event (triggered by
+    // this POST being accepted) drains the buffer with the correct cutoff.
+    // No send-side gate needed — correctness is on the receive side.
     const connectAndSend = async (): Promise<void> => {
       await ensureConnected(
         client,
@@ -469,8 +387,6 @@ export function WidgetProvider({
         persistenceRef.current ?? undefined,
         onConversationCreated,
       );
-      if (clientRef.current !== client) throw new Error("unmounted");
-      await welcomeGateRef.current.wait();
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(
         trimmed,
@@ -481,24 +397,20 @@ export function WidgetProvider({
     try {
       await connectAndSend();
     } catch (firstErr) {
-      // 400 = client input problem (message too long) — don't retry.
       if (isMessageTooLong(firstErr)) {
         dispatch({ type: "SET_AGENT_TYPING", typing: false });
         dispatch({ type: "SET_ERROR", error: toUserMessage(firstErr) });
         return false;
       }
 
-      // Any other failure: the SDK already tore down the session. Clear
-      // persisted state and retry once with a completely fresh session.
       if (enableLogging) {
         // eslint-disable-next-line no-console
         console.warn("[Agentforce] first attempt failed, retrying with fresh session:", firstErr);
       }
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
       clearSession(sessionKey);
-      hasUserSentRef.current = false;
-      welcomeGateRef.current.close();
-      welcomeDroppedRef.current = false;
+      echoCutoffRef.current = null;
+      pendingChatbotBufferRef.current = [];
       connectPromiseRef.current = null;
 
       try {
@@ -515,17 +427,9 @@ export function WidgetProvider({
       }
     }
 
-    // Bail if torn down while the send was in flight. No need to clear
-    // typing here — the component already unmounted or is remounting; the
-    // state will be re-initialized from scratch.
     if (clientRef.current !== client) return false;
 
     persistenceRef.current?.save();
-
-    // Surface agent output only after the send succeeds. The greeting from
-    // createConversation() was dropped while hasUserSentRef was false.
-    hasUserSentRef.current = true;
-
     return true;
   }, [onHandshakeStart, onConversationCreated]);
 
