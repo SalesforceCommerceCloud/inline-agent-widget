@@ -21,16 +21,15 @@ describe("widgetReducer", () => {
     });
 
     it("is ready to accept input on mount (connectionReady: true)", () => {
-      // Pills consume this flag as `disabled={!state.connectionReady}`. If the
-      // initial value flips to false, every PDP mount ships with disabled
-      // pills until the first handshake completes — regression target.
       expect(initialWidgetState.connectionReady).toBe(true);
     });
 
     it("exposes askedQuestions as an empty array (never undefined)", () => {
-      // QuestionPills filters pdpQuestions by `!askedQuestions.includes(q)`.
-      // Any non-array value here (undefined/null) throws at render.
       expect(initialWidgetState.askedQuestions).toEqual([]);
+    });
+
+    it("exposes followUpSuggestions as an empty array (never undefined)", () => {
+      expect(initialWidgetState.followUpSuggestions).toEqual([]);
     });
   });
 
@@ -108,16 +107,21 @@ describe("widgetReducer", () => {
     });
 
     it("clears askedQuestions so the new PDP's shelf is full again", () => {
-      // SPA PDP → PDP: pdpQuestions is swapped by the config-watching effect,
-      // and askedQuestions must reset so none of the new product's pills are
-      // pre-filtered out just because the shopper had asked a similar-looking
-      // question on the previous product.
       const start: WidgetState = {
         ...initialWidgetState,
         askedQuestions: ["Q1", "Q2"],
       };
       const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
       expect(next.askedQuestions).toEqual([]);
+    });
+
+    it("clears followUpSuggestions (they belong to the conversation, not the product)", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        followUpSuggestions: ["follow-up A"],
+      };
+      const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
+      expect(next.followUpSuggestions).toEqual([]);
     });
 
     it("leaves status + connectionReady untouched (connection outlives nav)", () => {
@@ -190,15 +194,21 @@ describe("widgetReducer", () => {
     });
 
     it("records typed free-text (even though it won't match any pill)", () => {
-      // Recording typed questions is harmless (they won't match a pdpQuestions
-      // string) and keeps the reducer branch dead-simple — no special-casing
-      // for the origin of the question.
       const start: WidgetState = { ...initialWidgetState, pdpQuestions: ["Q1"] };
       const next = widgetReducer(start, {
         type: "ASK_QUESTION",
         question: "something freeform",
       });
       expect(next.askedQuestions).toEqual(["something freeform"]);
+    });
+
+    it("clears followUpSuggestions so stale suggestions don't linger while the next answer loads", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        followUpSuggestions: ["follow-up A", "follow-up B"],
+      };
+      const next = widgetReducer(start, { type: "ASK_QUESTION", question: "new?" });
+      expect(next.followUpSuggestions).toEqual([]);
     });
   });
 
@@ -298,6 +308,39 @@ describe("widgetReducer", () => {
       expect(next.agentTyping).toBe(false);
     });
 
+    it("SET_ANSWER extracts followUpSuggestions from a BYON envelope", () => {
+      const envelope = JSON.stringify({
+        response: [
+          { type: "markdown", index: 0, data: { content: "The vest is windproof." } },
+          {
+            type: "suggestions",
+            index: 1,
+            data: {
+              display_text: [
+                "Is it suitable for layering?",
+                "Does it pack down small for travel?",
+              ],
+            },
+          },
+        ],
+      });
+      const next = widgetReducer(initialWidgetState, { type: "SET_ANSWER", content: envelope });
+      expect(next.answer).toBe("The vest is windproof.");
+      expect(next.followUpSuggestions).toEqual([
+        "Is it suitable for layering?",
+        "Does it pack down small for travel?",
+      ]);
+    });
+
+    it("SET_ANSWER sets followUpSuggestions to [] for plain-text answers", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        followUpSuggestions: ["stale suggestion"],
+      };
+      const next = widgetReducer(start, { type: "SET_ANSWER", content: "plain text answer" });
+      expect(next.followUpSuggestions).toEqual([]);
+    });
+
     it("SET_AGENT_TYPING toggles the typing flag", () => {
       expect(
         widgetReducer(initialWidgetState, { type: "SET_AGENT_TYPING", typing: true }).agentTyping,
@@ -315,6 +358,82 @@ describe("widgetReducer", () => {
         typeof widgetReducer
       >[1]);
       expect(next).toBe(start);
+    });
+  });
+
+  describe("REFRESH_PILLS", () => {
+    it("adds currently visible pills to dismissedQuestions", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        pdpQuestions: ["Q1", "Q2", "Q3", "Q4", "Q5"],
+      };
+      const next = widgetReducer(start, {
+        type: "REFRESH_PILLS",
+        currentlyVisible: ["Q1", "Q2", "Q3", "Q4", "Q5"],
+      });
+      expect(next.dismissedQuestions).toEqual(["Q1", "Q2", "Q3", "Q4", "Q5"]);
+    });
+
+    it("accumulates dismissed pills across multiple refreshes", () => {
+      const s1: WidgetState = {
+        ...initialWidgetState,
+        dismissedQuestions: ["Q1", "Q2"],
+      };
+      const s2 = widgetReducer(s1, {
+        type: "REFRESH_PILLS",
+        currentlyVisible: ["Q3", "Q4"],
+      });
+      expect(s2.dismissedQuestions).toEqual(["Q1", "Q2", "Q3", "Q4"]);
+    });
+
+    it("clears followUpSuggestions so the next batch comes from PDP pills", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        followUpSuggestions: ["follow-up A", "follow-up B"],
+      };
+      const next = widgetReducer(start, {
+        type: "REFRESH_PILLS",
+        currentlyVisible: ["follow-up A", "follow-up B"],
+      });
+      expect(next.followUpSuggestions).toEqual([]);
+    });
+
+    it("leaves pdpQuestions and askedQuestions untouched", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        pdpQuestions: ["Q1", "Q2", "Q3"],
+        askedQuestions: ["Q1"],
+      };
+      const next = widgetReducer(start, {
+        type: "REFRESH_PILLS",
+        currentlyVisible: ["Q2", "Q3"],
+      });
+      expect(next.pdpQuestions).toEqual(["Q1", "Q2", "Q3"]);
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
+  });
+
+  describe("dismissedQuestions lifecycle", () => {
+    it("initial state has an empty dismissedQuestions array", () => {
+      expect(initialWidgetState.dismissedQuestions).toEqual([]);
+    });
+
+    it("RESET_CONVERSATION clears dismissedQuestions", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        dismissedQuestions: ["Q1", "Q2"],
+      };
+      const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
+      expect(next.dismissedQuestions).toEqual([]);
+    });
+
+    it("SET_ANSWER clears dismissedQuestions (fresh answer = fresh slate)", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        dismissedQuestions: ["Q1"],
+      };
+      const next = widgetReducer(start, { type: "SET_ANSWER", content: "new answer" });
+      expect(next.dismissedQuestions).toEqual([]);
     });
   });
 });
