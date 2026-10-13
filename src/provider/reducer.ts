@@ -11,7 +11,6 @@ export const initialWidgetState: WidgetState = {
   connectionReady: true,
   pdpQuestions: [],
   followUpSuggestions: [],
-  dismissedQuestions: [],
   askedQuestions: [],
 };
 
@@ -51,7 +50,6 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         ...state,
         answer: extractMessageText(action.content),
         followUpSuggestions: extractMessageSuggestions(action.content),
-        dismissedQuestions: [],
         streamingText: "",
         agentTyping: false,
       };
@@ -79,22 +77,11 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         agentTyping: false,
         error: null,
         followUpSuggestions: [],
-        dismissedQuestions: [],
         askedQuestions: [],
       };
 
     case "SET_PDP_QUESTIONS":
       return { ...state, pdpQuestions: action.questions };
-
-    case "REFRESH_PILLS":
-      return {
-        ...state,
-        followUpSuggestions: [],
-        dismissedQuestions:
-          action.currentlyVisible.length === 0
-            ? []
-            : [...state.dismissedQuestions, ...action.currentlyVisible],
-      };
 
     default:
       return state;

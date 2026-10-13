@@ -109,8 +109,6 @@ export interface WidgetState {
   /** Follow-up suggestions from the agent's latest response. Populated by SET_ANSWER,
    * cleared on ASK_QUESTION and RESET_CONVERSATION. */
   followUpSuggestions: string[];
-  /** Pills hidden by the refresh button. Cleared on SET_ANSWER and RESET_CONVERSATION. */
-  dismissedQuestions: string[];
   /**
    * Questions the shopper has already asked in this PDP session. QuestionPills
    * filters these out so the shopper is never shown a pill they already
@@ -135,8 +133,7 @@ export type WidgetAction =
   | { type: "SET_ERROR"; error: string | null }
   | { type: "SET_CONNECTION_READY"; ready: boolean }
   | { type: "RESET_CONVERSATION" }
-  | { type: "SET_PDP_QUESTIONS"; questions: string[] }
-  | { type: "REFRESH_PILLS"; currentlyVisible: string[] };
+  | { type: "SET_PDP_QUESTIONS"; questions: string[] };
 
 export interface WidgetContextValue {
   state: WidgetState;
