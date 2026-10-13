@@ -175,7 +175,7 @@ describe("extractMessageSuggestions", () => {
     expect(extractMessageSuggestions(envelope)).toEqual(["A", "B", "C"]);
   });
 
-  it("caps at 5 suggestions", () => {
+  it("caps at MAX_PDP_QUESTIONS (5)", () => {
     const envelope = JSON.stringify({
       response: [
         {

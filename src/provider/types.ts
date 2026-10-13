@@ -106,21 +106,10 @@ export interface WidgetState {
   connectionReady: boolean;
   /** Opener question pills for the current product. Empty when unset. */
   pdpQuestions: string[];
-  /**
-   * Follow-up suggestions extracted from the agent's latest response. When
-   * non-empty, QuestionPills renders these INSTEAD of the static pdpQuestions
-   * — they replace the shelf on each answer, giving the shopper contextual
-   * next-step options. Cleared on ASK_QUESTION (a new question is in-flight)
-   * and RESET_CONVERSATION. Populated by SET_ANSWER from the `suggestions`
-   * blocks in the BYON response envelope.
-   */
+  /** Follow-up suggestions from the agent's latest response. Populated by SET_ANSWER,
+   * cleared on ASK_QUESTION and RESET_CONVERSATION. */
   followUpSuggestions: string[];
-  /**
-   * Questions dismissed by the refresh button. When the shopper clicks
-   * "Show different questions", the currently visible pills are added here so
-   * they don't reappear. Cleared on RESET_CONVERSATION (new product) and on
-   * SET_ANSWER (a fresh answer brings fresh follow-ups, so the slate resets).
-   */
+  /** Pills hidden by the refresh button. Cleared on SET_ANSWER and RESET_CONVERSATION. */
   dismissedQuestions: string[];
   /**
    * Questions the shopper has already asked in this PDP session. QuestionPills
@@ -129,8 +118,7 @@ export interface WidgetState {
    * Reset on PDP navigation via RESET_CONVERSATION. On every ASK_QUESTION the
    * question text is appended (deduped); the match in QuestionPills is by
    * exact string equality against pdpQuestions, so a typed free-text question
-   * has no effect on the pill shelf. Also filters follow-up suggestions so a
-   * suggestion the shopper already asked doesn't reappear.
+   * has no effect on the pill shelf. Also filters follow-up suggestions.
    */
   askedQuestions: string[];
 }

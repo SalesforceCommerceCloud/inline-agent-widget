@@ -411,6 +411,18 @@ describe("widgetReducer", () => {
       expect(next.pdpQuestions).toEqual(["Q1", "Q2", "Q3"]);
       expect(next.askedQuestions).toEqual(["Q1"]);
     });
+
+    it("clears dismissedQuestions when currentlyVisible is empty (cycle reset)", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        dismissedQuestions: ["Q1", "Q2", "Q3", "Q4", "Q5"],
+      };
+      const next = widgetReducer(start, {
+        type: "REFRESH_PILLS",
+        currentlyVisible: [],
+      });
+      expect(next.dismissedQuestions).toEqual([]);
+    });
   });
 
   describe("dismissedQuestions lifecycle", () => {

@@ -1,3 +1,5 @@
+import { MAX_PDP_QUESTIONS } from "./provider/pdp-questions";
+
 /**
  * Turn the text an agent sends over the wire into something displayable.
  *
@@ -118,13 +120,7 @@ export function extractMessageText(content: string): string {
   }
 }
 
-import { MAX_PDP_QUESTIONS } from "./provider/pdp-questions";
-
-/**
- * Walk a parsed agent payload and collect follow-up suggestions (`display_text`
- * arrays from `suggestions`-typed blocks). Returns an empty array when there are
- * no suggestions — callers never need to null-check.
- */
+/** Collect `display_text` arrays from `suggestions`-typed blocks in a parsed agent payload. */
 function collectSuggestions(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
 
@@ -149,13 +145,8 @@ function collectSuggestions(value: unknown): string[] {
   return [];
 }
 
-/**
- * Extract follow-up suggestion strings from a final message's content. Parses
- * the same BYON `{response:[…]}` envelope as `extractMessageText` but pulls
- * `data.display_text` from `suggestions` blocks instead of `data.content` from
- * markdown blocks. Capped at {@link MAX_PDP_QUESTIONS}. Returns `[]`
- * for plain-text agents or when no suggestions are present.
- */
+/** Extract follow-up suggestions from a final message's BYON envelope.
+ * Capped at {@link MAX_PDP_QUESTIONS}. Returns `[]` for plain-text or no suggestions. */
 export function extractMessageSuggestions(content: string): string[] {
   if (!content) return [];
 
