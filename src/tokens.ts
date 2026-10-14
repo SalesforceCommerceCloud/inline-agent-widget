@@ -1,3 +1,5 @@
+import { MAX_PDP_QUESTIONS } from "./provider/pdp-questions";
+
 /**
  * Turn the text an agent sends over the wire into something displayable.
  *
@@ -115,5 +117,55 @@ export function extractMessageText(content: string): string {
     return collectRenderableText(JSON.parse(trimmed)) ?? content;
   } catch {
     return content;
+  }
+}
+
+/** Collect `display_text` arrays from `suggestions`-typed blocks in a parsed agent payload. */
+function collectSuggestions(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap(collectSuggestions);
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  if (Array.isArray(obj.response)) {
+    return collectSuggestions(obj.response);
+  }
+
+  if (obj.type === "suggestions") {
+    const data = obj.data as Record<string, unknown> | undefined;
+    const texts = data?.display_text;
+    if (Array.isArray(texts)) {
+      return texts.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+    }
+  }
+
+  return [];
+}
+
+/** Extract follow-up suggestions from a final message's BYON envelope.
+ * Capped at {@link MAX_PDP_QUESTIONS}. Returns `[]` for plain-text or no suggestions. */
+export function extractMessageSuggestions(content: string): string[] {
+  if (!content) return [];
+
+  const trimmed = content.trim();
+  if (!looksLikeJson(trimmed)) return [];
+
+  try {
+    const raw = collectSuggestions(JSON.parse(trimmed));
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of raw) {
+      const t = s.trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+      if (out.length >= MAX_PDP_QUESTIONS) break;
+    }
+    return out;
+  } catch {
+    return [];
   }
 }

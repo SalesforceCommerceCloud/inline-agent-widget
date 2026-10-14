@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractMessageText, extractTokenText } from "../src/tokens";
+import { extractMessageSuggestions, extractMessageText, extractTokenText } from "../src/tokens";
 
 describe("extractTokenText", () => {
   it("returns plain text unchanged", () => {
@@ -117,5 +117,103 @@ describe("extractMessageText", () => {
   it("falls back to the raw string when JSON-like text fails to parse", () => {
     const block = '{"type": "markdown",}'; // brace-matched but a trailing comma makes it invalid JSON
     expect(extractMessageText(block)).toBe(block);
+  });
+});
+
+describe("extractMessageSuggestions", () => {
+  it("extracts display_text from a suggestions block in a BYON envelope", () => {
+    const envelope = JSON.stringify({
+      response: [
+        { type: "markdown", index: 0, data: { content: "Here is your **answer**." } },
+        {
+          type: "suggestions",
+          index: 1,
+          data: {
+            display_text: [
+              "Is it suitable for layering?",
+              "Does it pack down small for travel?",
+              "How warm is the 800-fill down?",
+            ],
+          },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      "Is it suitable for layering?",
+      "Does it pack down small for travel?",
+      "How warm is the 800-fill down?",
+    ]);
+  });
+
+  it("returns an empty array for plain text content", () => {
+    expect(extractMessageSuggestions("Hello world")).toEqual([]);
+  });
+
+  it("returns an empty array for empty content", () => {
+    expect(extractMessageSuggestions("")).toEqual([]);
+  });
+
+  it("returns an empty array when the envelope has no suggestions block", () => {
+    const envelope = JSON.stringify({
+      response: [
+        { type: "markdown", index: 0, data: { content: "Just text." } },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual([]);
+  });
+
+  it("deduplicates suggestions", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: { display_text: ["A", "B", "A", "C", "B"] },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B", "C"]);
+  });
+
+  it("caps at MAX_PDP_QUESTIONS (5)", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: { display_text: ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"] },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toHaveLength(5);
+    expect(extractMessageSuggestions(envelope)).toEqual(["Q1", "Q2", "Q3", "Q4", "Q5"]);
+  });
+
+  it("skips empty and whitespace-only strings", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: { display_text: ["A", "", "  ", "B"] },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B"]);
+  });
+
+  it("returns an empty array for invalid JSON", () => {
+    expect(extractMessageSuggestions('{"type": "suggestions",}')).toEqual([]);
+  });
+
+  it("collects suggestions from multiple suggestions blocks", () => {
+    const envelope = JSON.stringify({
+      response: [
+        { type: "suggestions", index: 0, data: { display_text: ["A", "B"] } },
+        { type: "markdown", index: 1, data: { content: "text" } },
+        { type: "suggestions", index: 2, data: { display_text: ["C", "D"] } },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B", "C", "D"]);
   });
 });

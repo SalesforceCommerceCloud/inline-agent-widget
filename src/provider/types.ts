@@ -106,6 +106,9 @@ export interface WidgetState {
   connectionReady: boolean;
   /** Opener question pills for the current product. Empty when unset. */
   pdpQuestions: string[];
+  /** Follow-up suggestions from the agent's latest response. Populated by SET_ANSWER,
+   * cleared on ASK_QUESTION and RESET_CONVERSATION. */
+  followUpSuggestions: string[];
   /**
    * Questions the shopper has already asked in this PDP session. QuestionPills
    * filters these out so the shopper is never shown a pill they already
@@ -113,8 +116,7 @@ export interface WidgetState {
    * Reset on PDP navigation via RESET_CONVERSATION. On every ASK_QUESTION the
    * question text is appended (deduped); the match in QuestionPills is by
    * exact string equality against pdpQuestions, so a typed free-text question
-   * has no effect on the pill shelf. Once Shilpi's follow-up pills land, this
-   * list also feeds "filter already-asked from follow-up suggestions" for free.
+   * has no effect on the pill shelf. Also filters follow-up suggestions.
    */
   askedQuestions: string[];
 }
