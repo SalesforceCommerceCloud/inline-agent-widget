@@ -63,7 +63,7 @@ describe("connect()", () => {
     expect(bodyOf(tokenCall)).toMatchObject({
       orgId: TEST_ORG_ID,
       esDeveloperName: TEST_ES_NAME,
-      capabilitiesVersion: "65",
+      capabilitiesVersion: "66",
       platform: "Web",
     });
 

@@ -82,7 +82,8 @@ export class AgentforceClient extends TypedEventEmitter {
       reconnectDelay: options.reconnectDelay ?? 2000,
       enableLogging: options.enableLogging ?? false,
       platform: options.platform ?? "Web",
-      capabilitiesVersion: options.capabilitiesVersion ?? "65",
+      // 66 is the minimum version that supports StructuredValue context variables.
+      capabilitiesVersion: options.capabilitiesVersion ?? "66",
     };
 
     this.maxRetries = tuning.maxRetries;
