@@ -21,7 +21,7 @@ export interface CommerceAgentContext {
   [key: string]: unknown;
   version: string;
   page_context_type: string;
-  page_context_data: { id: string };
+  page_context_data: string;
 }
 
 /**
@@ -109,7 +109,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
   const context: CommerceAgentContext = {
     version: COMMERCE_AGENT_CONTEXT_VERSION,
     page_context_type: "pdp_inline",
-    page_context_data: { id: productId },
+    page_context_data: JSON.stringify({ id: productId }),
   };
 
   return [

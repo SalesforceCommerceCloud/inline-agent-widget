@@ -101,7 +101,7 @@ describe("resolveProductId", () => {
 });
 
 describe("buildPdpInlineContext", () => {
-  it("builds a single commerce_agent_context StructuredValue with the expected object", () => {
+  it("builds a single commerce_agent_context StructuredValue with page_context_data as a JSON string", () => {
     const context = buildPdpInlineContext("1050633A6D");
     expect(context).toHaveLength(1);
     expect(context[0].name).toBe("commerce_agent_context");
@@ -110,7 +110,7 @@ describe("buildPdpInlineContext", () => {
       value: {
         version: "1.0.0",
         page_context_type: "pdp_inline",
-        page_context_data: { id: "1050633A6D" },
+        page_context_data: JSON.stringify({ id: "1050633A6D" }),
       },
     });
   });
@@ -120,7 +120,8 @@ describe("buildPdpInlineContext", () => {
     const context = buildPdpInlineContext(productId);
 
     const val = context[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
-    expect((val.value.page_context_data as { id: string }).id).toBe(productId);
+    const parsed = JSON.parse(val.value.page_context_data as string) as { id: string };
+    expect(parsed.id).toBe(productId);
   });
 
   it("uses the latest product id when context is rebuilt after navigation", () => {
@@ -129,7 +130,9 @@ describe("buildPdpInlineContext", () => {
 
     const valA = first[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
     const valB = second[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
-    expect((valA.value.page_context_data as { id: string }).id).toBe("PRODUCT-A");
-    expect((valB.value.page_context_data as { id: string }).id).toBe("PRODUCT-B");
+    const parsedA = JSON.parse(valA.value.page_context_data as string) as { id: string };
+    const parsedB = JSON.parse(valB.value.page_context_data as string) as { id: string };
+    expect(parsedA.id).toBe("PRODUCT-A");
+    expect(parsedB.id).toBe("PRODUCT-B");
   });
 });
