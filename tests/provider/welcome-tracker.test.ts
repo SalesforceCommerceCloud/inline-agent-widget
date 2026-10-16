@@ -6,124 +6,65 @@ import {
 } from "../../src/provider/welcome-tracker";
 
 /**
- * Unit tests for the welcome-tracker classifier. This is where the
- * welcome-handoff rules live as a pure function — the module exists
- * precisely so this logic is testable without a DOM / React / SDK
- * harness. Each test name describes the exact timing window; two of them
- * are regressions for bugs observed in incognito cold loads.
+ * Unit tests for the position-based welcome classifier. Server timestamps
+ * (ISO-8601 UTC) are compared as strings — the test fixtures reflect that
+ * ordering explicitly.
  */
 
-const base = (over: Partial<TrackerContext> = {}): TrackerContext => ({
-  hasUserSent: false,
-  welcomeDropped: false,
-  gatePending: true,
-  ...over,
-});
+const BEFORE = "2026-10-08T18:00:00.000Z";
+const CUTOFF = "2026-10-08T18:00:05.000Z";
+const AFTER  = "2026-10-08T18:00:10.000Z";
 
-describe("classifyMessage — pre-send (hasUserSent=false)", () => {
-  it("drops a Chatbot message while gate is pending and signals wasPending=true", () => {
-    // Fast agent: welcome arrives during the gate's window. Caller must
-    // close the gate + clear timeout + enable send.
-    const v = classifyMessage("chatbot", base({ gatePending: true }));
-    expect(v).toEqual({ action: "drop-welcome", wasPending: true });
-  });
-
-  it("drops a Chatbot message AFTER the gate has already timed out (wasPending=false)", () => {
-    // REGRESSION: this is the window that leaked the welcome as the
-    // answer in iteration 2 of the fix. 5s gate timer fires, gate
-    // closes, user POST still in flight → welcome arrives → prior code
-    // only flipped welcomeDropped when gate.pending was true, missed
-    // this case, next (real) answer got dropped as "the welcome".
-    const v = classifyMessage("chatbot", base({ gatePending: false }));
-    expect(v).toEqual({ action: "drop-welcome", wasPending: false });
-  });
-
-  it("ignores a pre-send EndUser echo (defensive — shouldn't happen)", () => {
-    const v = classifyMessage("end-user", base());
-    expect(v).toEqual({ action: "ignore" });
-  });
-
-  it("drops the welcome regardless of welcomeDropped's current value", () => {
-    // welcomeDropped is a caller-managed flag; the classifier shouldn't
-    // get confused by a stale `true` showing up pre-send (would only
-    // happen on a weird restore path, but still — don't crash).
-    const v = classifyMessage("chatbot", base({ welcomeDropped: true }));
-    expect(v.action).toBe("drop-welcome");
+describe("classifyMessage — echo cutoff not yet known", () => {
+  it("buffers any Chatbot message when echoTimestamp is null", () => {
+    const ctx: TrackerContext = { echoTimestamp: null };
+    expect(classifyMessage(BEFORE, ctx)).toEqual({ action: "buffer" });
+    expect(classifyMessage(AFTER, ctx)).toEqual({ action: "buffer" });
   });
 });
 
-describe("classifyMessage — post-send, welcome already dropped", () => {
-  it("renders a Chatbot message as the answer", () => {
-    const v = classifyMessage(
-      "chatbot",
-      base({ hasUserSent: true, welcomeDropped: true, gatePending: false }),
-    );
-    expect(v).toEqual({ action: "render-answer" });
+describe("classifyMessage — echo cutoff observed", () => {
+  const ctx: TrackerContext = { echoTimestamp: CUTOFF };
+
+  it("drops a Chatbot message whose timestamp precedes the echo (welcome)", () => {
+    expect(classifyMessage(BEFORE, ctx)).toEqual({ action: "drop-welcome" });
   });
 
-  it("ignores the EndUser echo of the shopper's POST", () => {
-    // The user bubble is painted optimistically from ASK_QUESTION; the
-    // echo coming back over SSE must not re-render it.
-    const v = classifyMessage(
-      "end-user",
-      base({ hasUserSent: true, welcomeDropped: true, gatePending: false }),
-    );
-    expect(v).toEqual({ action: "ignore" });
-  });
-});
-
-describe("classifyMessage — post-send, welcome NOT yet dropped (slow-agent race)", () => {
-  it("drops a Chatbot message as the (late) welcome, not the answer", () => {
-    // REGRESSION: iteration 1 of the fix. Gate timeout fired → user
-    // POST went out → user POST completed → hasUserSent flipped true →
-    // welcome landed last. Without the welcomeDropped check, this
-    // Chatbot message would be rendered as the answer ("Welcome to
-    // NTO!" flashed on screen in the incognito repro).
-    const v = classifyMessage(
-      "chatbot",
-      base({ hasUserSent: true, welcomeDropped: false, gatePending: false }),
-    );
-    expect(v).toEqual({ action: "drop-welcome", wasPending: false });
+  it("drops a Chatbot message whose timestamp equals the echo (edge case)", () => {
+    // Server-emitted welcome and echo won't actually collide to the ms, but
+    // guard the boundary anyway. Equal → welcome (strictly-after is the
+    // answer condition).
+    expect(classifyMessage(CUTOFF, ctx)).toEqual({ action: "drop-welcome" });
   });
 
-  it("ignores the EndUser echo even when the welcome is still pending", () => {
-    // Ordering edge case: user POST echoes back BEFORE the welcome
-    // message lands. Caller must not treat this as a signal to flip
-    // welcomeDropped.
-    const v = classifyMessage(
-      "end-user",
-      base({ hasUserSent: true, welcomeDropped: false, gatePending: false }),
-    );
-    expect(v).toEqual({ action: "ignore" });
+  it("renders a Chatbot message whose timestamp follows the echo (answer)", () => {
+    expect(classifyMessage(AFTER, ctx)).toEqual({ action: "render-answer" });
+  });
+
+  it("REGRESSION — answer-before-welcome: late welcome is still dropped by timestamp, not by order", () => {
+    // The bug: fast agent answered before its own welcome landed. Timing
+    // classifier mis-labelled the first chatbot message as "late welcome"
+    // (true answer) and the second as the real answer (actual welcome,
+    // which then rendered as the response). Position classifier doesn't
+    // care about SSE arrival order — only server timestamps.
+    //
+    // Simulated stream order: answer arrives first (AFTER cutoff), welcome
+    // arrives second (BEFORE cutoff). Both get classified correctly.
+    expect(classifyMessage(AFTER, ctx)).toEqual({ action: "render-answer" });
+    expect(classifyMessage(BEFORE, ctx)).toEqual({ action: "drop-welcome" });
   });
 });
 
 describe("shouldAppendStreamingToken", () => {
-  it("suppresses pre-send welcome tokens", () => {
-    // Agentforce streams the welcome too, not just answers. Pre-send,
-    // every token belongs to the welcome. Appending would paint the
-    // welcome as the streamingText preview.
-    expect(shouldAppendStreamingToken({ hasUserSent: false, welcomeDropped: false })).toBe(false);
+  it("suppresses tokens before the echo cutoff is observed", () => {
+    // Pre-echo tokens belong to the welcome's own stream; appending would
+    // paint the welcome into streamingText.
+    expect(shouldAppendStreamingToken({ echoTimestamp: null })).toBe(false);
   });
 
-  it("suppresses post-send tokens while the welcome is still pending", () => {
-    // Slow-agent window: user POST completed but no Chatbot `message`
-    // event has flipped welcomeDropped yet. Any tokens arriving here
-    // belong to the welcome's own stream — appending would paint the
-    // welcome into streamingText and overwrite it on the final
-    // welcome `message` only to then overwrite it AGAIN with the real
-    // answer. Visible flicker. Caller suppresses.
-    expect(shouldAppendStreamingToken({ hasUserSent: true, welcomeDropped: false })).toBe(false);
-  });
-
-  it("appends tokens post-send once the welcome has been consumed", () => {
-    expect(shouldAppendStreamingToken({ hasUserSent: true, welcomeDropped: true })).toBe(true);
-  });
-
-  it("suppresses tokens pre-send even if welcomeDropped is stale-true", () => {
-    // Defensive: welcomeDropped true without hasUserSent true is a weird
-    // state (would only come from a restore race). Still shouldn't
-    // append — nothing to render until the user has engaged.
-    expect(shouldAppendStreamingToken({ hasUserSent: false, welcomeDropped: true })).toBe(false);
+  it("appends tokens once the echo cutoff is observed", () => {
+    // SCRT2 delivers entries in server order over the SSE stream, so any
+    // streaming token arriving after the echo belongs to the answer.
+    expect(shouldAppendStreamingToken({ echoTimestamp: CUTOFF })).toBe(true);
   });
 });
