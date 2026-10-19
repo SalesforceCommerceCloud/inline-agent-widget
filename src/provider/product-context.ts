@@ -17,11 +17,9 @@ export interface ProductContextConfig {
 
 export const COMMERCE_AGENT_CONTEXT_VERSION = "1.0.0";
 
-export interface CommerceAgentContext {
+export interface AgentContextPayload {
   [key: string]: unknown;
-  version: string;
-  page_context_type: string;
-  page_context_data: { id: string };
+  currentPage: string;
 }
 
 /**
@@ -106,15 +104,17 @@ export function resolveProductId(
 
 /** Build the single commerce_agent_context variable expected by the inline PDP agent. */
 export function buildPdpInlineContext(productId: string): SessionContextVariable[] {
-  const context: CommerceAgentContext = {
-    version: COMMERCE_AGENT_CONTEXT_VERSION,
-    page_context_type: "pdp_inline",
-    page_context_data: { id: productId },
+  const context: AgentContextPayload = {
+    currentPage: JSON.stringify({
+      version: COMMERCE_AGENT_CONTEXT_VERSION,
+      page_context_type: "pdp_inline",
+      page_context_data: { id: productId },
+    }),
   };
 
   return [
     {
-      name: "commerce_agent_context",
+      name: "_AgentContext",
       value: { valueType: "StructuredValue", value: context },
     },
   ];
