@@ -101,10 +101,10 @@ describe("resolveProductId", () => {
 });
 
 describe("buildPdpInlineContext", () => {
-  it("builds a single commerce_agent_context StructuredValue with the expected object", () => {
+  it("builds a single _AgentContext StructuredValue with the expected object", () => {
     const context = buildPdpInlineContext("1050633A6D");
     expect(context).toHaveLength(1);
-    expect(context[0].name).toBe("commerce_agent_context");
+    expect(context[0].name).toBe("_AgentContext");
     expect(context[0].value).toEqual({
       valueType: "StructuredValue",
       value: {
