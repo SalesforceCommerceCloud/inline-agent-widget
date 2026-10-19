@@ -101,17 +101,16 @@ describe("resolveProductId", () => {
 });
 
 describe("buildPdpInlineContext", () => {
-  it("builds a single _AgentContext StructuredValue with the expected object", () => {
+  it("builds _AgentContext StructuredValue with currentPage as JSON string", () => {
     const context = buildPdpInlineContext("1050633A6D");
     expect(context).toHaveLength(1);
     expect(context[0].name).toBe("_AgentContext");
-    expect(context[0].value).toEqual({
-      valueType: "StructuredValue",
-      value: {
-        version: "1.0.0",
-        page_context_type: "pdp_inline",
-        page_context_data: { id: "1050633A6D" },
-      },
+    const val = context[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
+    expect(val.valueType).toBe("StructuredValue");
+    expect(JSON.parse(val.value.currentPage as string)).toEqual({
+      version: "1.0.0",
+      page_context_type: "pdp_inline",
+      page_context_data: { id: "1050633A6D" },
     });
   });
 
@@ -120,7 +119,8 @@ describe("buildPdpInlineContext", () => {
     const context = buildPdpInlineContext(productId);
 
     const val = context[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
-    expect((val.value.page_context_data as { id: string }).id).toBe(productId);
+    const parsed = JSON.parse(val.value.currentPage as string) as { page_context_data: { id: string } };
+    expect(parsed.page_context_data.id).toBe(productId);
   });
 
   it("uses the latest product id when context is rebuilt after navigation", () => {
@@ -129,7 +129,9 @@ describe("buildPdpInlineContext", () => {
 
     const valA = first[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
     const valB = second[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
-    expect((valA.value.page_context_data as { id: string }).id).toBe("PRODUCT-A");
-    expect((valB.value.page_context_data as { id: string }).id).toBe("PRODUCT-B");
+    const parsedA = JSON.parse(valA.value.currentPage as string) as { page_context_data: { id: string } };
+    const parsedB = JSON.parse(valB.value.currentPage as string) as { page_context_data: { id: string } };
+    expect(parsedA.page_context_data.id).toBe("PRODUCT-A");
+    expect(parsedB.page_context_data.id).toBe("PRODUCT-B");
   });
 });
