@@ -115,7 +115,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
   return [
     {
       name: "commerce_agent_context",
-      value: { valueType: "StructuredValue", value: context },
+      value: { valueType: "TextValue", textValue: JSON.stringify(context) },
     },
   ];
 }
