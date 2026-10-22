@@ -1,5 +1,5 @@
 import { extractMessageSuggestions, extractMessageText, extractTokenText } from "../tokens";
-import type { WidgetAction, WidgetState } from "./types";
+import type { SuggestionItem, WidgetAction, WidgetState } from "./types";
 
 export const initialWidgetState: WidgetState = {
   status: "idle",
