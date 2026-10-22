@@ -233,6 +233,11 @@
   cursor: not-allowed;
 }
 
+/* Main-agent pills: subtle visual cue that tapping opens the full chat. */
+.pill--main-agent {
+  border-style: dashed;
+}
+
 /* No pill selected-state in the north-star layout: the right-aligned user
  * bubble above the answer carries the "which question am I looking at?"
  * acknowledgement. See QuestionPills.tsx JSDoc. */
