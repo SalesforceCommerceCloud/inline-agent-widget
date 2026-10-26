@@ -111,6 +111,7 @@ describe("buildPdpInlineContext", () => {
         version: "1.0.0",
         page_context_type: "pdp_inline",
         page_context_data: { id: "1050633A6D" },
+        suggestion_routing: true,
       }),
     });
   });
