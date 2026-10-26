@@ -16,31 +16,34 @@ import type { SuggestionItem } from "../provider/types";
 
 type AnyRecord = Record<string, unknown>;
 
-const CIMULATE_INPUT_POLL_INTERVAL_MS = 200;
-const CIMULATE_INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds total
+const INPUT_POLL_INTERVAL_MS = 200;
+const INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds
+const SESSION_POLL_INTERVAL_MS = 500;
+const SESSION_POLL_MAX_ATTEMPTS = 30; // 15 seconds
+const POST_WELCOME_DELAY_MS = 500;
 
-/**
- * Find the Cimulate widget's search input. The widget renders directly into the
- * document body (NOT inside #commerce-client-messaging-widget), so we search
- * the full document for its `.cim-widget-search-input`.
- */
 function findCimulateInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("input.cim-widget-search-input");
 }
 
 /**
- * Inject text into an input in a framework-agnostic way.
- *
- * 1. `execCommand('insertText')` goes through the browser's editing pipeline
- *    and fires beforeinput/input/change events that all frameworks (React,
- *    Angular, Vue, vanilla) pick up.
- * 2. Fallback: native property-descriptor setter + synthetic events — covers
- *    React-controlled inputs when execCommand isn't available.
- * 3. Last resort: plain `.value` assignment + input/change events.
+ * Check whether the Cimulate session is ready by looking for rendered chat
+ * content. On cold start the widget opens but hasn't established a session
+ * yet — the welcome message appears once the session is live. We look for
+ * any Cimulate element with meaningful text that isn't the search bar.
  */
+function isCimulateSessionReady(): boolean {
+  const elements = document.querySelectorAll(".commerce-client-shopper-agent");
+  for (const el of elements) {
+    if (el.matches("input, form, button, svg, path")) continue;
+    if (el.textContent && el.textContent.trim().length > 10) return true;
+  }
+  return false;
+}
+
 function injectInputValue(el: HTMLInputElement, value: string): void {
   el.focus();
-  el.select(); // select existing text so insertText replaces it
+  el.select();
 
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const inserted = document.execCommand("insertText", false, value);
@@ -57,10 +60,6 @@ function injectInputValue(el: HTMLInputElement, value: string): void {
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-/**
- * Submit the Cimulate search form after a short delay so the framework
- * state can update from the injected value.
- */
 function submitCimulateInput(input: HTMLInputElement): void {
   setTimeout(() => {
     const sendBtn =
@@ -72,8 +71,6 @@ function submitCimulateInput(input: HTMLInputElement): void {
       return;
     }
 
-    // If the button is still disabled, the framework may not have caught up.
-    // Try form submission or Enter key as fallbacks.
     const form = input.closest("form");
     if (form && typeof form.requestSubmit === "function") {
       form.requestSubmit();
@@ -93,29 +90,63 @@ function submitCimulateInput(input: HTMLInputElement): void {
 }
 
 /**
- * Poll for the Cimulate input to appear (the widget may still be rendering
- * after `toggleWidgetOpen`), then type the question and submit.
+ * Once the input is found, wait for the Cimulate session to be fully ready
+ * before injecting. On warm sessions (messages already exist) we inject
+ * immediately. On cold start we poll until the welcome message renders,
+ * then inject after a short delay so the welcome flow settles.
+ */
+function waitForSessionThenInject(text: string): void {
+  if (isCimulateSessionReady()) {
+    const input = findCimulateInput();
+    if (input) {
+      injectInputValue(input, text);
+      submitCimulateInput(input);
+    }
+    return;
+  }
+
+  let attempts = 0;
+  const poll = () => {
+    attempts++;
+    if (isCimulateSessionReady()) {
+      setTimeout(() => {
+        const input = findCimulateInput();
+        if (input) {
+          injectInputValue(input, text);
+          submitCimulateInput(input);
+        }
+      }, POST_WELCOME_DELAY_MS);
+      return;
+    }
+    if (attempts < SESSION_POLL_MAX_ATTEMPTS) {
+      setTimeout(poll, SESSION_POLL_INTERVAL_MS);
+    }
+  };
+  poll();
+}
+
+/**
+ * Poll for the Cimulate input to appear, then queue the question until
+ * the session is fully established (welcome message rendered).
  */
 function sendToCimulateInput(text: string): void {
   let attempts = 0;
 
-  const tryInject = () => {
+  const tryFind = () => {
     attempts++;
     const input = findCimulateInput();
 
     if (input) {
-      injectInputValue(input, text);
-      submitCimulateInput(input);
+      waitForSessionThenInject(text);
       return;
     }
 
-    if (attempts < CIMULATE_INPUT_POLL_MAX_ATTEMPTS) {
-      setTimeout(tryInject, CIMULATE_INPUT_POLL_INTERVAL_MS);
+    if (attempts < INPUT_POLL_MAX_ATTEMPTS) {
+      setTimeout(tryFind, INPUT_POLL_INTERVAL_MS);
     }
   };
 
-  // Give the panel a moment to open before polling.
-  setTimeout(tryInject, CIMULATE_INPUT_POLL_INTERVAL_MS);
+  setTimeout(tryFind, INPUT_POLL_INTERVAL_MS);
 }
 
 function openAndSendToShopperAgent(text: string): boolean {
