@@ -18,49 +18,49 @@ type AnyRecord = Record<string, unknown>;
 
 const INPUT_POLL_INTERVAL_MS = 200;
 const INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds
-const SESSION_POLL_INTERVAL_MS = 500;
-const SESSION_POLL_MAX_ATTEMPTS = 30; // 15 seconds
-const POST_WELCOME_DELAY_MS = 500;
+const SESSION_READY_TIMEOUT_MS = 20_000; // 20 seconds max wait
+const POST_WELCOME_DELAY_MS = 800;
 
 function findCimulateInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("input.cim-widget-search-input");
 }
 
 /**
- * Check whether the Cimulate session is ready by looking for rendered chat
- * content. On cold start the widget opens but hasn't established a session
- * yet — the welcome message appears once the session is live. We look for
- * any Cimulate element with meaningful text that isn't the search bar.
+ * Check whether chat content (welcome message or prior messages) has been
+ * rendered in the Cimulate widget. Looks for any `.commerce-client-shopper-agent`
+ * element that contains meaningful text and isn't part of the search bar.
  */
-function isCimulateSessionReady(): boolean {
+function hasCimulateMessages(): boolean {
   const elements = document.querySelectorAll(".commerce-client-shopper-agent");
   for (const el of elements) {
     if (el.matches("input, form, button, svg, path")) continue;
+    if (el.closest("form")) continue;
     if (el.textContent && el.textContent.trim().length > 10) return true;
   }
   return false;
 }
 
-function injectInputValue(el: HTMLInputElement, value: string): void {
-  el.focus();
-  el.select();
+function injectAndSubmit(text: string): void {
+  const input = findCimulateInput();
+  if (!input) return;
+
+  input.focus();
+  input.select();
 
   // eslint-disable-next-line @typescript-eslint/no-deprecated
-  const inserted = document.execCommand("insertText", false, value);
-  if (inserted) return;
-
-  const nativeSetter =
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (nativeSetter) {
-    nativeSetter.call(el, value);
-  } else {
-    el.value = value;
+  const inserted = document.execCommand("insertText", false, text);
+  if (!inserted) {
+    const nativeSetter =
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (nativeSetter) {
+      nativeSetter.call(input, text);
+    } else {
+      input.value = text;
+    }
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-}
 
-function submitCimulateInput(input: HTMLInputElement): void {
   setTimeout(() => {
     const sendBtn =
       document.querySelector<HTMLButtonElement>("button.cim-widget-search-button-icon") ??
@@ -90,39 +90,32 @@ function submitCimulateInput(input: HTMLInputElement): void {
 }
 
 /**
- * Once the input is found, wait for the Cimulate session to be fully ready
- * before injecting. On warm sessions (messages already exist) we inject
- * immediately. On cold start we poll until the welcome message renders,
- * then inject after a short delay so the welcome flow settles.
+ * Use a MutationObserver to watch for the welcome message to actually
+ * appear in the DOM. Once we see it, wait a short delay for the welcome
+ * flow to fully settle, then inject the question.
+ *
+ * On warm sessions (messages already present), injects immediately.
  */
 function waitForSessionThenInject(text: string): void {
-  if (isCimulateSessionReady()) {
-    const input = findCimulateInput();
-    if (input) {
-      injectInputValue(input, text);
-      submitCimulateInput(input);
-    }
+  if (hasCimulateMessages()) {
+    injectAndSubmit(text);
     return;
   }
 
-  let attempts = 0;
-  const poll = () => {
-    attempts++;
-    if (isCimulateSessionReady()) {
-      setTimeout(() => {
-        const input = findCimulateInput();
-        if (input) {
-          injectInputValue(input, text);
-          submitCimulateInput(input);
-        }
-      }, POST_WELCOME_DELAY_MS);
-      return;
+  const observer = new MutationObserver(() => {
+    if (hasCimulateMessages()) {
+      observer.disconnect();
+      clearTimeout(timeout);
+      setTimeout(() => injectAndSubmit(text), POST_WELCOME_DELAY_MS);
     }
-    if (attempts < SESSION_POLL_MAX_ATTEMPTS) {
-      setTimeout(poll, SESSION_POLL_INTERVAL_MS);
-    }
-  };
-  poll();
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  const timeout = setTimeout(() => {
+    observer.disconnect();
+    injectAndSubmit(text);
+  }, SESSION_READY_TIMEOUT_MS);
 }
 
 /**
@@ -134,13 +127,10 @@ function sendToCimulateInput(text: string): void {
 
   const tryFind = () => {
     attempts++;
-    const input = findCimulateInput();
-
-    if (input) {
+    if (findCimulateInput()) {
       waitForSessionThenInject(text);
       return;
     }
-
     if (attempts < INPUT_POLL_MAX_ATTEMPTS) {
       setTimeout(tryFind, INPUT_POLL_INTERVAL_MS);
     }
