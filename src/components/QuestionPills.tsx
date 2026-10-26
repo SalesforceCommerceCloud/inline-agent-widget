@@ -16,34 +16,16 @@ import type { SuggestionItem } from "../provider/types";
 
 type AnyRecord = Record<string, unknown>;
 
-const CIMULATE_CONTAINER_ID = "commerce-client-messaging-widget";
 const CIMULATE_INPUT_POLL_INTERVAL_MS = 200;
 const CIMULATE_INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds total
 
 /**
- * Find the Cimulate widget's text input inside its container. The widget
- * renders its own DOM tree — we probe common selectors and fall back to
- * any visible textarea or input[type="text"].
+ * Find the Cimulate widget's search input. The widget renders directly into the
+ * document body (NOT inside #commerce-client-messaging-widget), so we search
+ * the full document for its `.cim-widget-search-input`.
  */
-function findCimulateInput(): HTMLTextAreaElement | HTMLInputElement | null {
-  const container = document.getElementById(CIMULATE_CONTAINER_ID);
-  const root = container ?? document;
-
-  const selectors = [
-    'textarea[data-testid="message-input"]',
-    'textarea[placeholder]',
-    'input[data-testid="message-input"]',
-    'input[type="text"][placeholder]',
-    '[role="textbox"]',
-    "textarea",
-    'input[type="text"]',
-  ];
-
-  for (const sel of selectors) {
-    const el = root.querySelector<HTMLTextAreaElement | HTMLInputElement>(sel);
-    if (el && !el.disabled && el.offsetParent !== null) return el;
-  }
-  return null;
+function findCimulateInput(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("input.cim-widget-search-input");
 }
 
 /**
@@ -78,17 +60,14 @@ function sendToCimulateInput(text: string): void {
       input.focus();
       setNativeInputValue(input, text);
 
-      // Try to find and click the send/submit button next to the input.
-      const form = input.closest("form");
+      // Find and click the Cimulate send button, falling back to Enter.
       const sendBtn =
-        form?.querySelector<HTMLButtonElement>('button[type="submit"]') ??
-        form?.querySelector<HTMLButtonElement>("button") ??
-        input.parentElement?.querySelector<HTMLButtonElement>("button");
+        document.querySelector<HTMLButtonElement>("button.cim-widget-search-button-icon") ??
+        input.closest("form")?.querySelector<HTMLButtonElement>("button");
 
       if (sendBtn && !sendBtn.disabled) {
         sendBtn.click();
       } else {
-        // Fall back to pressing Enter.
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
       }
       return;
