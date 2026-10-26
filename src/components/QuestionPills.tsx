@@ -16,18 +16,106 @@ import type { SuggestionItem } from "../provider/types";
 
 type AnyRecord = Record<string, unknown>;
 
+const CIMULATE_CONTAINER_ID = "commerce-client-messaging-widget";
+const CIMULATE_INPUT_POLL_INTERVAL_MS = 200;
+const CIMULATE_INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds total
+
+/**
+ * Find the Cimulate widget's text input inside its container. The widget
+ * renders its own DOM tree — we probe common selectors and fall back to
+ * any visible textarea or input[type="text"].
+ */
+function findCimulateInput(): HTMLTextAreaElement | HTMLInputElement | null {
+  const container = document.getElementById(CIMULATE_CONTAINER_ID);
+  const root = container ?? document;
+
+  const selectors = [
+    'textarea[data-testid="message-input"]',
+    'textarea[placeholder]',
+    'input[data-testid="message-input"]',
+    'input[type="text"][placeholder]',
+    '[role="textbox"]',
+    "textarea",
+    'input[type="text"]',
+  ];
+
+  for (const sel of selectors) {
+    const el = root.querySelector<HTMLTextAreaElement | HTMLInputElement>(sel);
+    if (el && !el.disabled && el.offsetParent !== null) return el;
+  }
+  return null;
+}
+
+/**
+ * Set a React-controlled input's value in a way React actually sees.
+ * React tracks value via an internal setter; plain `el.value = x` is
+ * ignored. We call the native setter then dispatch an `input` event.
+ */
+function setNativeInputValue(el: HTMLTextAreaElement | HTMLInputElement, value: string): void {
+  const nativeSetter =
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set ??
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (nativeSetter) {
+    nativeSetter.call(el, value);
+  } else {
+    el.value = value;
+  }
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/**
+ * Poll for the Cimulate input to appear (the widget may still be rendering
+ * after `toggleWidgetOpen`), then type the question and submit.
+ */
+function sendToCimulateInput(text: string): void {
+  let attempts = 0;
+
+  const tryInject = () => {
+    attempts++;
+    const input = findCimulateInput();
+
+    if (input) {
+      input.focus();
+      setNativeInputValue(input, text);
+
+      // Try to find and click the send/submit button next to the input.
+      const form = input.closest("form");
+      const sendBtn =
+        form?.querySelector<HTMLButtonElement>('button[type="submit"]') ??
+        form?.querySelector<HTMLButtonElement>("button") ??
+        input.parentElement?.querySelector<HTMLButtonElement>("button");
+
+      if (sendBtn && !sendBtn.disabled) {
+        sendBtn.click();
+      } else {
+        // Fall back to pressing Enter.
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      }
+      return;
+    }
+
+    if (attempts < CIMULATE_INPUT_POLL_MAX_ATTEMPTS) {
+      setTimeout(tryInject, CIMULATE_INPUT_POLL_INTERVAL_MS);
+    }
+  };
+
+  // Give the panel a moment to open before polling.
+  setTimeout(tryInject, CIMULATE_INPUT_POLL_INTERVAL_MS);
+}
+
 function openAndSendToShopperAgent(text: string): boolean {
   if (typeof window === "undefined") return false;
 
   try {
     const w = window as AnyRecord;
 
-    // Commerce Client (Cimulate widget) — open panel
+    // Commerce Client (Cimulate widget) — open panel + inject question
     const cimulate = w.CimulateMessaging as AnyRecord | undefined;
     const components = (cimulate?.eventHandlers as AnyRecord)
       ?.components as AnyRecord | undefined;
     if (typeof components?.toggleWidgetOpen === "function") {
       (components.toggleWidgetOpen as (show: boolean) => void)(true);
+      sendToCimulateInput(text);
       return true;
     }
 
@@ -40,11 +128,9 @@ function openAndSendToShopperAgent(text: string): boolean {
 
       void launch().then(() => {
         if (typeof send === "function") {
-          // Small delay for the conversation to fully open before sending.
           setTimeout(() => void send(text), 500);
         }
       }).catch(() => {
-        // Chat may already be open — try sending directly.
         if (typeof send === "function") {
           setTimeout(() => void send(text), 500);
         }
