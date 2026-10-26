@@ -29,13 +29,24 @@ function findCimulateInput(): HTMLInputElement | null {
 }
 
 /**
- * Set a React-controlled input's value in a way React actually sees.
- * React tracks value via an internal setter; plain `el.value = x` is
- * ignored. We call the native setter then dispatch an `input` event.
+ * Inject text into an input in a framework-agnostic way.
+ *
+ * 1. `execCommand('insertText')` goes through the browser's editing pipeline
+ *    and fires beforeinput/input/change events that all frameworks (React,
+ *    Angular, Vue, vanilla) pick up.
+ * 2. Fallback: native property-descriptor setter + synthetic events — covers
+ *    React-controlled inputs when execCommand isn't available.
+ * 3. Last resort: plain `.value` assignment + input/change events.
  */
-function setNativeInputValue(el: HTMLTextAreaElement | HTMLInputElement, value: string): void {
+function injectInputValue(el: HTMLInputElement, value: string): void {
+  el.focus();
+  el.select(); // select existing text so insertText replaces it
+
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  const inserted = document.execCommand("insertText", false, value);
+  if (inserted) return;
+
   const nativeSetter =
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set ??
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   if (nativeSetter) {
     nativeSetter.call(el, value);
@@ -43,6 +54,42 @@ function setNativeInputValue(el: HTMLTextAreaElement | HTMLInputElement, value: 
     el.value = value;
   }
   el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
+ * Submit the Cimulate search form after a short delay so the framework
+ * state can update from the injected value.
+ */
+function submitCimulateInput(input: HTMLInputElement): void {
+  setTimeout(() => {
+    const sendBtn =
+      document.querySelector<HTMLButtonElement>("button.cim-widget-search-button-icon") ??
+      input.closest("form")?.querySelector<HTMLButtonElement>("button");
+
+    if (sendBtn && !sendBtn.disabled) {
+      sendBtn.click();
+      return;
+    }
+
+    // If the button is still disabled, the framework may not have caught up.
+    // Try form submission or Enter key as fallbacks.
+    const form = input.closest("form");
+    if (form && typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }),
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keypress", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }),
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }),
+    );
+  }, 150);
 }
 
 /**
@@ -57,19 +104,8 @@ function sendToCimulateInput(text: string): void {
     const input = findCimulateInput();
 
     if (input) {
-      input.focus();
-      setNativeInputValue(input, text);
-
-      // Find and click the Cimulate send button, falling back to Enter.
-      const sendBtn =
-        document.querySelector<HTMLButtonElement>("button.cim-widget-search-button-icon") ??
-        input.closest("form")?.querySelector<HTMLButtonElement>("button");
-
-      if (sendBtn && !sendBtn.disabled) {
-        sendBtn.click();
-      } else {
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
-      }
+      injectInputValue(input, text);
+      submitCimulateInput(input);
       return;
     }
 
