@@ -18,24 +18,25 @@ type AnyRecord = Record<string, unknown>;
 
 const INPUT_POLL_INTERVAL_MS = 200;
 const INPUT_POLL_MAX_ATTEMPTS = 15; // 3 seconds
-const SESSION_READY_TIMEOUT_MS = 20_000; // 20 seconds max wait
-const POST_WELCOME_DELAY_MS = 800;
+const SESSION_READY_TIMEOUT_MS = 25_000;
+const DOM_QUIET_PERIOD_MS = 1500;
 
 function findCimulateInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("input.cim-widget-search-input");
 }
 
 /**
- * Check whether chat content (welcome message or prior messages) has been
- * rendered in the Cimulate widget. Looks for any `.commerce-client-shopper-agent`
- * element that contains meaningful text and isn't part of the search bar.
+ * Check whether actual chat message content exists in the Cimulate widget.
+ * Uses > 100 chars to match real messages (welcome message, prior chat) and
+ * avoid false positives on widget chrome (titles, labels, tooltips are short).
  */
-function hasCimulateMessages(): boolean {
+function hasChatContent(): boolean {
   const elements = document.querySelectorAll(".commerce-client-shopper-agent");
   for (const el of elements) {
     if (el.matches("input, form, button, svg, path")) continue;
     if (el.closest("form")) continue;
-    if (el.textContent && el.textContent.trim().length > 10) return true;
+    const text = el.textContent?.trim() ?? "";
+    if (text.length > 100) return true;
   }
   return false;
 }
@@ -90,37 +91,58 @@ function injectAndSubmit(text: string): void {
 }
 
 /**
- * Use a MutationObserver to watch for the welcome message to actually
- * appear in the DOM. Once we see it, wait a short delay for the welcome
- * flow to fully settle, then inject the question.
+ * Wait for the Cimulate session to be fully ready before injecting.
  *
- * On warm sessions (messages already present), injects immediately.
+ * On cold start the widget goes through: open → session handshake → routing →
+ * bot joins → typing indicator → welcome message → typing stops. If we inject
+ * before this completes, the message is silently dropped.
+ *
+ * Strategy:
+ *  - Warm session (chat content already present): inject immediately.
+ *  - Cold start: MutationObserver watches for chat content (> 100 chars, to
+ *    avoid false-positives on widget chrome). Once the welcome message appears,
+ *    we wait for the DOM to go quiet (no mutations for DOM_QUIET_PERIOD_MS) so
+ *    the full welcome flow settles (typing indicator removed, suggestions
+ *    rendered, etc.), then inject.
  */
 function waitForSessionThenInject(text: string): void {
-  if (hasCimulateMessages()) {
+  if (hasChatContent()) {
     injectAndSubmit(text);
     return;
   }
 
+  let quietTimer: ReturnType<typeof setTimeout>;
+  let contentSeen = false;
+
+  const finish = () => {
+    observer.disconnect();
+    clearTimeout(hardTimeout);
+    clearTimeout(quietTimer);
+    injectAndSubmit(text);
+  };
+
   const observer = new MutationObserver(() => {
-    if (hasCimulateMessages()) {
-      observer.disconnect();
-      clearTimeout(timeout);
-      setTimeout(() => injectAndSubmit(text), POST_WELCOME_DELAY_MS);
+    if (!contentSeen) {
+      contentSeen = hasChatContent();
+    }
+    if (contentSeen) {
+      clearTimeout(quietTimer);
+      quietTimer = setTimeout(finish, DOM_QUIET_PERIOD_MS);
     }
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
 
-  const timeout = setTimeout(() => {
-    observer.disconnect();
-    injectAndSubmit(text);
-  }, SESSION_READY_TIMEOUT_MS);
+  const hardTimeout = setTimeout(finish, SESSION_READY_TIMEOUT_MS);
 }
 
 /**
  * Poll for the Cimulate input to appear, then queue the question until
- * the session is fully established (welcome message rendered).
+ * the session is fully established (welcome message rendered + DOM stable).
  */
 function sendToCimulateInput(text: string): void {
   let attempts = 0;
