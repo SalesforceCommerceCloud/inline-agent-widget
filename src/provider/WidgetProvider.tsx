@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { AgentforceClient } from "../sdk";
-import { AgentforceApiError, AgentforceNetworkError } from "../sdk/errors";
+import {
+  AgentforceApiError,
+  AgentforceContextDroppedError,
+  AgentforceNetworkError,
+} from "../sdk/errors";
 import { WidgetContext } from "./context";
 import { ensureConnected, type SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
@@ -92,6 +96,8 @@ export function WidgetProvider({
     productIdParam,
     productIdPattern,
     pdpQuestions,
+    enableContextRetryOnFirstTurn = true,
+    contextRetryDelayMs = 400,
   } = config;
 
   // Keep the reducer's pdpQuestions in sync with the incoming config. Fires on
@@ -488,30 +494,65 @@ export function WidgetProvider({
         return false;
       }
 
-      // Any other failure: the SDK already tore down the session. Clear
-      // persisted state and retry once with a completely fresh session.
-      if (enableLogging) {
-        // eslint-disable-next-line no-console
-        console.warn("[Agentforce] first attempt failed, retrying with fresh session:", firstErr);
-      }
-      const sessionKey = buildSessionKey(orgId, esDeveloperName);
-      clearSession(sessionKey);
-      hasUserSentRef.current = false;
-      welcomeGateRef.current.close();
-      welcomeDroppedRef.current = false;
-      connectPromiseRef.current = null;
-
-      try {
-        await connectAndSend();
-      } catch (retryErr) {
+      // SCRT2 dropped our context vars (bot hadn't joined yet, Flow handler
+      // rejected them). Session is intact — wait briefly, then resend the
+      // same text + context ONCE. W-24659747.
+      if (
+        firstErr instanceof AgentforceContextDroppedError &&
+        enableContextRetryOnFirstTurn &&
+        productId
+      ) {
         if (enableLogging) {
           // eslint-disable-next-line no-console
-          console.error("[Agentforce] retry also failed:", retryErr);
+          console.warn("[Agentforce] context dropped, retrying same session:", firstErr);
         }
-        dispatch({ type: "SET_AGENT_TYPING", typing: false });
-        dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
-        dispatch({ type: "SET_STATUS", status: "disconnected" });
-        return false;
+        const jitter = Math.random() * 100;
+        await new Promise((resolve) => setTimeout(resolve, contextRetryDelayMs + jitter));
+        if (clientRef.current !== client) return false;
+        try {
+          await client.sendMessage(trimmed, buildPdpInlineContext(productId));
+        } catch (retryErr) {
+          if (enableLogging) {
+            // eslint-disable-next-line no-console
+            console.error("[Agentforce] context-retry also failed:", retryErr);
+          }
+          // Let the (ungrounded) answer land rather than erroring the UI —
+          // a dropped-context turn is less bad than a visible failure.
+          if (!(retryErr instanceof AgentforceContextDroppedError)) {
+            dispatch({ type: "SET_AGENT_TYPING", typing: false });
+            dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
+            return false;
+          }
+        }
+      } else {
+        // Any other failure: the SDK already tore down the session. Clear
+        // persisted state and retry once with a completely fresh session.
+        if (enableLogging) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[Agentforce] first attempt failed, retrying with fresh session:",
+            firstErr,
+          );
+        }
+        const sessionKey = buildSessionKey(orgId, esDeveloperName);
+        clearSession(sessionKey);
+        hasUserSentRef.current = false;
+        welcomeGateRef.current.close();
+        welcomeDroppedRef.current = false;
+        connectPromiseRef.current = null;
+
+        try {
+          await connectAndSend();
+        } catch (retryErr) {
+          if (enableLogging) {
+            // eslint-disable-next-line no-console
+            console.error("[Agentforce] retry also failed:", retryErr);
+          }
+          dispatch({ type: "SET_AGENT_TYPING", typing: false });
+          dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
+          dispatch({ type: "SET_STATUS", status: "disconnected" });
+          return false;
+        }
       }
     }
 

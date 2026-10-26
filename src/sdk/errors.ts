@@ -57,3 +57,22 @@ export class AgentforceAuthError extends AgentforceClientError {
     this.name = "AgentforceAuthError";
   }
 }
+
+// Thrown when SCRT2 accepts the message (200 OK) but drops the per-turn
+// context variables — session-handler races the bot join (Flow routing).
+// Session is intact; caller can retry the SAME text + context.
+export class AgentforceContextDroppedError extends AgentforceClientError {
+  readonly warningCode: string;
+  readonly warningMessage: string;
+
+  constructor(warningCode: string, warningMessage: string, options?: ErrorOptions) {
+    super(
+      `Context variables dropped by SCRT2 (${warningCode}): ${warningMessage}`,
+      "api",
+      options,
+    );
+    this.name = "AgentforceContextDroppedError";
+    this.warningCode = warningCode;
+    this.warningMessage = warningMessage;
+  }
+}

@@ -70,6 +70,15 @@ export interface WidgetConfig {
    * this off for shared/kiosk devices. See README.
    */
   persistSession?: boolean;
+
+  /**
+   * Retry a message once, same-session, when SCRT2 drops `commerce_agent_context`
+   * on the first turn (bot hadn't joined yet → routed through Flow →
+   * INVALID_CONTEXT_VARIABLE_PAYLOAD). Default **true**. See W-24659747.
+   */
+  enableContextRetryOnFirstTurn?: boolean;
+  /** Backoff before the one-shot context-dropped retry (ms). Default 400. */
+  contextRetryDelayMs?: number;
 }
 
 export type ConnectionStatus =

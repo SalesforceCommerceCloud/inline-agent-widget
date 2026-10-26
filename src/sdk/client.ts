@@ -4,8 +4,11 @@ import {
   AgentforceApiError,
   AgentforceAuthError,
   AgentforceClientError,
+  AgentforceContextDroppedError,
   AgentforceNetworkError,
 } from "./errors";
+
+const CONTEXT_DROPPED_WARNING = "INVALID_CONTEXT_VARIABLE_PAYLOAD";
 import { Logger } from "./logger";
 import type {
   AgentforceClientOptions,
@@ -317,8 +320,22 @@ export class AgentforceClient extends TypedEventEmitter {
           `Message accepted with context warning ${response.warning.warningCode}: ` +
             response.warning.warningMessage,
         );
+        // SCRT2 dropped our context variables (bot hasn't joined yet, session
+        // handler resolved to Flow). Surface so callers can retry same-session.
+        if (
+          response.warning.warningCode === CONTEXT_DROPPED_WARNING &&
+          contextVariables?.length
+        ) {
+          throw new AgentforceContextDroppedError(
+            response.warning.warningCode,
+            response.warning.warningMessage,
+          );
+        }
       }
     } catch (err) {
+      // Context-dropped is a soft signal — session is fine, do not tear down.
+      if (err instanceof AgentforceContextDroppedError) throw err;
+
       // 400 = client input error (e.g. message too long) — the session is fine.
       if (err instanceof AgentforceApiError && err.statusCode === 400) throw err;
 

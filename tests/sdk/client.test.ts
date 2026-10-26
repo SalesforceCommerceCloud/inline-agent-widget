@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AgentforceClient, type AgentforceMessageEvent, type AgentforceStreamingTokenEvent } from "../../src/sdk";
+import {
+  AgentforceClient,
+  AgentforceContextDroppedError,
+  type AgentforceMessageEvent,
+  type AgentforceStreamingTokenEvent,
+} from "../../src/sdk";
 import { createMockFetch } from "../helpers/mock-fetch";
 import { createMockSSEStream } from "../helpers/mock-sse-stream";
 import {
@@ -256,6 +261,53 @@ describe("conversation lifecycle request bodies", () => {
         },
       ],
     });
+
+    client.disconnect();
+  });
+
+  it("sendMessage throws AgentforceContextDroppedError when SCRT2 drops context vars", async () => {
+    const { client } = await connectClient();
+    // Register /message BEFORE /conversation — the message URL
+    // (`/iamessage/api/v2/conversation/{id}/message`) also includes the
+    // `/iamessage/api/v2/conversation` prefix, and the mock matches the
+    // first-registered handler.
+    mockFetch.onPost("/message").respondWith(200, {
+      warning: {
+        warningCode: "INVALID_CONTEXT_VARIABLE_PAYLOAD",
+        warningMessage: "Session handler is a Flow; context variables were dropped.",
+      },
+    });
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+
+    await expect(
+      client.sendMessage("hi", [
+        {
+          name: "commerce_agent_context",
+          value: { valueType: "TextValue", textValue: '{"id":"500400"}' },
+        },
+      ]),
+    ).rejects.toBeInstanceOf(AgentforceContextDroppedError);
+
+    // Soft signal — session should NOT be torn down.
+    expect(client.conversationId).not.toBeNull();
+    expect(client.isConnected).toBe(true);
+
+    client.disconnect();
+  });
+
+  it("sendMessage does NOT throw when the warning fires but no context was sent", async () => {
+    const { client } = await connectClient();
+    mockFetch.onPost("/message").respondWith(200, {
+      warning: {
+        warningCode: "INVALID_CONTEXT_VARIABLE_PAYLOAD",
+        warningMessage: "spurious",
+      },
+    });
+    mockFetch.onPost("/iamessage/api/v2/conversation").respondWith(200, {});
+    await client.createConversation();
+
+    await expect(client.sendMessage("hi")).resolves.toBeUndefined();
 
     client.disconnect();
   });

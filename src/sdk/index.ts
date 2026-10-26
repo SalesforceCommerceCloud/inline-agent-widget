@@ -13,6 +13,7 @@ export {
   AgentforceApiError,
   AgentforceNetworkError,
   AgentforceAuthError,
+  AgentforceContextDroppedError,
 } from "./errors";
 
 export type {

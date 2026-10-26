@@ -6,6 +6,7 @@ interface RouteHandler {
   pathPattern: string;
   status: number;
   body: unknown;
+  once?: boolean;
 }
 
 function createResponse(status: number, body: unknown): Response {
@@ -26,8 +27,10 @@ export function createMockFetch() {
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = init?.method || "GET";
 
-      for (const handler of handlers) {
+      for (let i = 0; i < handlers.length; i++) {
+        const handler = handlers[i];
         if (handler.method === method && url.includes(handler.pathPattern)) {
+          if (handler.once) handlers.splice(i, 1);
           return createResponse(handler.status, handler.body);
         }
       }
@@ -40,6 +43,11 @@ export function createMockFetch() {
     return {
       respondWith(status: number, body: unknown) {
         handlers.push({ method, pathPattern, status, body });
+      },
+      // Match once and remove. Use for retry tests where the first call
+      // returns a different payload than subsequent calls.
+      respondOnce(status: number, body: unknown) {
+        handlers.unshift({ method, pathPattern, status, body, once: true });
       },
     };
   }
