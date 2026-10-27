@@ -2,7 +2,7 @@ import { useWidget } from "../provider/context";
 
 /** Show follow-up suggestions after a question, or PDP pills before any question is asked. */
 export function QuestionPills() {
-  const { state, sendMessage } = useWidget();
+  const { state, sendMessage, prepareConnection } = useWidget();
 
   const asked = new Set(state.askedQuestions);
   const hasAsked = state.askedQuestions.length > 0;
@@ -24,6 +24,9 @@ export function QuestionPills() {
             className="pill"
             type="button"
             disabled={disabled}
+            onPointerDown={prepareConnection}
+            onFocus={prepareConnection}
+            onTouchStart={prepareConnection}
             onClick={() => {
               void sendMessage(q);
             }}

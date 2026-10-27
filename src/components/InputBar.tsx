@@ -53,6 +53,9 @@ export function InputBar() {
         rows={1}
         value={text}
         onChange={onChange}
+        onFocus={prepareConnection}
+        onPointerDown={prepareConnection}
+        onTouchStart={prepareConnection}
         onKeyDown={onKeyDown}
         placeholder={
           // Precedence: explicit `placeholder` config (host override) wins —
