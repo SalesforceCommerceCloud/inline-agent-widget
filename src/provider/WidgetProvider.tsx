@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { AgentforceClient } from "../sdk";
 import { AgentforceApiError, AgentforceNetworkError } from "../sdk/errors";
+import { ConnectionManager } from "./connection-manager";
 import { WidgetContext } from "./context";
-import { ensureConnected, type SessionPersistence } from "./ensure-connected";
+import type { SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
@@ -50,10 +51,11 @@ export function WidgetProvider({
 }) {
   const [state, dispatch] = useReducer(widgetReducer, initialWidgetState);
   const clientRef = useRef<AgentforceClient | null>(null);
-  // Memoizes the in-flight lazy handshake (token → SSE → conversation) so
-  // concurrent first sends share one attempt. Readiness itself is tracked by the
-  // client's conversationId (see ensureConnected), not a separate flag.
-  const connectPromiseRef = useRef<Promise<void> | null>(null);
+  // FSM for the SCRT2 handshake lifecycle (NOT_STARTED → TRANSPORT_CONNECTING
+  // → CONVERSATION_READY → READY, plus FAILED). Owns the single-flight
+  // connect promise and the welcome gate — provider never touches those
+  // directly.
+  const managerRef = useRef<ConnectionManager | null>(null);
   // Server-authoritative cutoff: the EndUser echo's transcriptedTimestamp.
   // Any Chatbot entry with ts <= cutoff is the pre-POST welcome; strictly
   // after is the answer. Null until the first echo lands. Reset wherever a
@@ -69,16 +71,11 @@ export function WidgetProvider({
   // concern only — correctness of welcome-vs-answer is handled by the
   // echo cutoff above and does not depend on this firing.
   const uiReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The session-persistence adapter for the current client (null when
-  // persistSession is off). Held in a ref so the long-lived handlers/callbacks
-  // read the latest without re-registering.
-  const persistenceRef = useRef<SessionPersistence | null>(null);
-  // Send-side welcome gate. Shayan (SCRT2) confirmed: context is only forwarded
-  // after the bot has joined the conversation, and bot-join surfaces as the
-  // first Chatbot SSE entry (the welcome). We hold the POST /message until that
-  // entry arrives, then resolve the gate. Everything after is answer-side.
-  const welcomeReceivedRef = useRef(false);
-  const welcomeWaitersRef = useRef<Array<() => void>>([]);
+  // Latest-callback refs so the ConnectionManager (constructed in the
+  // client-mount effect) can call through them without having to re-register
+  // when the useCallback identities below change on re-render.
+  const onHandshakeStartRef = useRef<(() => void) | null>(null);
+  const onConversationCreatedRef = useRef<(() => void) | null>(null);
 
   const {
     scrt2Url,
@@ -159,9 +156,6 @@ export function WidgetProvider({
     // Fresh client: no echo observed yet, buffer empty.
     echoCutoffRef.current = null;
     pendingChatbotBufferRef.current = [];
-    connectPromiseRef.current = null;
-    welcomeReceivedRef.current = false;
-    welcomeWaitersRef.current = [];
 
     // Build the session-persistence adapter (or null when the feature is off).
     const sessionKey = buildSessionKey(orgId, esDeveloperName);
@@ -195,7 +189,7 @@ export function WidgetProvider({
               // conversation's state). Pre-mark the welcome-gate as received
               // for the same reason — bot already joined in the prior session.
               echoCutoffRef.current = "0000-01-01T00:00:00.000Z";
-              welcomeReceivedRef.current = true;
+              managerRef.current?.notifyWelcome();
               dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
@@ -218,8 +212,19 @@ export function WidgetProvider({
           },
         }
       : null;
-    persistenceRef.current = persistence;
     if (!persistence) clearSession(sessionKey);
+
+    // Construct the FSM. onHandshakeStart (status: "connecting", UI-liveness
+    // timer) and onConversationCreated (mirror the id to the host ref) are
+    // defined further down as useCallbacks; we route them through the ref so
+    // this effect doesn't need to re-run when they change identity.
+    const manager = new ConnectionManager({
+      client,
+      persistence: persistence ?? undefined,
+      onHandshakeStart: () => onHandshakeStartRef.current?.(),
+      onConversationCreated: () => onConversationCreatedRef.current?.(),
+    });
+    managerRef.current = manager;
 
     // Register handlers now so no events are missed once we do connect.
     client.on("connected", () => dispatch({ type: "SET_STATUS", status: "connected" }));
@@ -262,14 +267,10 @@ export function WidgetProvider({
       }
     });
     client.on("message", (e) => {
-      // First Chatbot entry on the stream = bot has joined (welcome). Flip the
-      // gate and drain any send that was waiting. Subsequent fires are no-ops.
-      if (!welcomeReceivedRef.current) {
-        welcomeReceivedRef.current = true;
-        const waiters = welcomeWaitersRef.current;
-        welcomeWaitersRef.current = [];
-        for (const resolve of waiters) resolve();
-      }
+      // First Chatbot entry on the stream = bot has joined (welcome). The
+      // manager flips the gate, drains any waiting send, and transitions
+      // CONVERSATION_READY → READY. Subsequent fires are no-ops.
+      manager.notifyWelcome();
       // EndUser echoes come through user_echo now; this handler sees only
       // Chatbot (Agent / Supervisor / Chatbot role) entries.
       if (echoCutoffRef.current === null) {
@@ -301,9 +302,7 @@ export function WidgetProvider({
         clearSession(sessionKey);
         echoCutoffRef.current = null;
         pendingChatbotBufferRef.current = [];
-        connectPromiseRef.current = null;
-        welcomeReceivedRef.current = false;
-        welcomeWaitersRef.current = [];
+        manager.reset();
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
@@ -326,7 +325,7 @@ export function WidgetProvider({
         clearTimeout(uiReadyTimeoutRef.current);
         uiReadyTimeoutRef.current = null;
       }
-      welcomeWaitersRef.current = [];
+      manager.dispose();
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
       // — so a persisted session correctly survives to the next page.
@@ -335,7 +334,7 @@ export function WidgetProvider({
       client.disconnect();
       if (hadConversation) clearSession(sessionKey);
       if (clientRef.current === client) clientRef.current = null;
-      if (persistenceRef.current === persistence) persistenceRef.current = null;
+      if (managerRef.current === manager) managerRef.current = null;
     };
   }, [scrt2Url, orgId, esDeveloperName, capabilitiesVersion, enableLogging, persistSession]);
 
@@ -360,25 +359,23 @@ export function WidgetProvider({
     if (conversationIdRef) conversationIdRef.current = id;
   }, [conversationIdRef]);
 
+  useEffect(() => { onHandshakeStartRef.current = onHandshakeStart; }, [onHandshakeStart]);
+  useEffect(() => { onConversationCreatedRef.current = onConversationCreated; }, [onConversationCreated]);
+
   const prepareConnection = useCallback(() => {
-    const client = clientRef.current;
-    if (!client) return;
-    void ensureConnected(
-      client,
-      connectPromiseRef,
-      onHandshakeStart,
-      persistenceRef.current ?? undefined,
-      onConversationCreated,
-    ).catch(() => {
+    const manager = managerRef.current;
+    if (!manager) return;
+    void manager.connect().catch(() => {
       // Swallow — surfacing a connect error while the user is merely typing
       // would be noise. sendMessage() will retry and report if it still fails.
     });
-  }, [onHandshakeStart, onConversationCreated]);
+  }, []);
 
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
+    const manager = managerRef.current;
     const trimmed = text.trim();
-    if (!client || !trimmed) return false;
+    if (!client || !manager || !trimmed) return false;
 
     if (trimmed.length > 4000) {
       dispatch({ type: "SET_ERROR", error: "Message exceeds the maximum length of 4,000 characters." });
@@ -401,36 +398,14 @@ export function WidgetProvider({
         ? resolveProductId(window.location, productContextRef.current)
         : null;
 
-    // Wait for the first Chatbot SSE entry (= bot joined). SCRT2 only forwards
-    // commerce_agent_context after the bot joins; posting earlier means SCRT2
-    // falls back to the Flow handler and drops the variables (W-24659747).
-    const waitForWelcome = (timeoutMs: number): Promise<void> =>
-      new Promise((resolve, reject) => {
-        if (welcomeReceivedRef.current) {
-          resolve();
-          return;
-        }
-        const timer = setTimeout(() => {
-          welcomeWaitersRef.current = welcomeWaitersRef.current.filter((w) => w !== resolveOnce);
-          reject(new Error("welcome_timeout"));
-        }, timeoutMs);
-        const resolveOnce = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-        welcomeWaitersRef.current.push(resolveOnce);
-      });
-
+    // SCRT2 only forwards commerce_agent_context after the bot joins; posting
+    // earlier means SCRT2 falls back to the Flow handler and drops the
+    // variables (W-24659747). The manager's welcome gate holds us until the
+    // first Chatbot SSE entry.
     const connectAndSend = async (): Promise<void> => {
-      await ensureConnected(
-        client,
-        connectPromiseRef,
-        onHandshakeStart,
-        persistenceRef.current ?? undefined,
-        onConversationCreated,
-      );
+      await manager.connect();
       if (clientRef.current !== client) throw new Error("unmounted");
-      await waitForWelcome(6000);
+      await manager.waitForWelcome(6000);
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(
         trimmed,
@@ -455,9 +430,7 @@ export function WidgetProvider({
       clearSession(sessionKey);
       echoCutoffRef.current = null;
       pendingChatbotBufferRef.current = [];
-      connectPromiseRef.current = null;
-      welcomeReceivedRef.current = false;
-      welcomeWaitersRef.current = [];
+      manager.reset();
 
       try {
         await connectAndSend();
@@ -475,9 +448,9 @@ export function WidgetProvider({
 
     if (clientRef.current !== client) return false;
 
-    persistenceRef.current?.save();
+    manager.persistSave();
     return true;
-  }, [onHandshakeStart, onConversationCreated]);
+  }, [enableLogging, orgId, esDeveloperName]);
 
   const value = useMemo(
     () => ({ state, dispatch, sendMessage, prepareConnection, config }),
