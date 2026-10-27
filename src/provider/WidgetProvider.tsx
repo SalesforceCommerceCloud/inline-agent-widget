@@ -68,6 +68,12 @@ export function WidgetProvider({
   // persistSession is off). Held in a ref so the long-lived handlers/callbacks
   // read the latest without re-registering.
   const persistenceRef = useRef<SessionPersistence | null>(null);
+  // Send-side welcome gate. Shayan (SCRT2) confirmed: context is only forwarded
+  // after the bot has joined the conversation, and bot-join surfaces as the
+  // first Chatbot SSE entry (the welcome). We hold the POST /message until that
+  // entry arrives, then resolve the gate. Everything after is answer-side.
+  const welcomeReceivedRef = useRef(false);
+  const welcomeWaitersRef = useRef<Array<() => void>>([]);
 
   const {
     scrt2Url,
@@ -149,6 +155,8 @@ export function WidgetProvider({
     echoCutoffRef.current = null;
     pendingChatbotBufferRef.current = [];
     connectPromiseRef.current = null;
+    welcomeReceivedRef.current = false;
+    welcomeWaitersRef.current = [];
 
     // Build the session-persistence adapter (or null when the feature is off).
     const sessionKey = buildSessionKey(orgId, esDeveloperName);
@@ -179,8 +187,10 @@ export function WidgetProvider({
               // no welcome will be emitted. Pre-set the cutoff to a sentinel
               // in the past so any replayed historical Chatbot entry sorts
               // AFTER it and renders as an answer (which matches the restored
-              // conversation's state).
+              // conversation's state). Pre-mark the welcome-gate as received
+              // for the same reason — bot already joined in the prior session.
               echoCutoffRef.current = "0000-01-01T00:00:00.000Z";
+              welcomeReceivedRef.current = true;
               dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
@@ -247,6 +257,14 @@ export function WidgetProvider({
       }
     });
     client.on("message", (e) => {
+      // First Chatbot entry on the stream = bot has joined (welcome). Flip the
+      // gate and drain any send that was waiting. Subsequent fires are no-ops.
+      if (!welcomeReceivedRef.current) {
+        welcomeReceivedRef.current = true;
+        const waiters = welcomeWaitersRef.current;
+        welcomeWaitersRef.current = [];
+        for (const resolve of waiters) resolve();
+      }
       // EndUser echoes come through user_echo now; this handler sees only
       // Chatbot (Agent / Supervisor / Chatbot role) entries.
       if (echoCutoffRef.current === null) {
@@ -279,6 +297,8 @@ export function WidgetProvider({
         echoCutoffRef.current = null;
         pendingChatbotBufferRef.current = [];
         connectPromiseRef.current = null;
+        welcomeReceivedRef.current = false;
+        welcomeWaitersRef.current = [];
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
@@ -301,6 +321,7 @@ export function WidgetProvider({
         clearTimeout(uiReadyTimeoutRef.current);
         uiReadyTimeoutRef.current = null;
       }
+      welcomeWaitersRef.current = [];
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
       // — so a persisted session correctly survives to the next page.
@@ -375,10 +396,26 @@ export function WidgetProvider({
         ? resolveProductId(window.location, productContextRef.current)
         : null;
 
-    // One attempt: ensure the session is live, then send. Pre-echo Chatbot
-    // entries buffer in the SSE handler; the user_echo event (triggered by
-    // this POST being accepted) drains the buffer with the correct cutoff.
-    // No send-side gate needed — correctness is on the receive side.
+    // Wait for the first Chatbot SSE entry (= bot joined). SCRT2 only forwards
+    // commerce_agent_context after the bot joins; posting earlier means SCRT2
+    // falls back to the Flow handler and drops the variables (W-24659747).
+    const waitForWelcome = (timeoutMs: number): Promise<void> =>
+      new Promise((resolve, reject) => {
+        if (welcomeReceivedRef.current) {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(() => {
+          welcomeWaitersRef.current = welcomeWaitersRef.current.filter((w) => w !== resolveOnce);
+          reject(new Error("welcome_timeout"));
+        }, timeoutMs);
+        const resolveOnce = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        welcomeWaitersRef.current.push(resolveOnce);
+      });
+
     const connectAndSend = async (): Promise<void> => {
       await ensureConnected(
         client,
@@ -387,6 +424,8 @@ export function WidgetProvider({
         persistenceRef.current ?? undefined,
         onConversationCreated,
       );
+      if (clientRef.current !== client) throw new Error("unmounted");
+      await waitForWelcome(6000);
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(
         trimmed,
@@ -412,6 +451,8 @@ export function WidgetProvider({
       echoCutoffRef.current = null;
       pendingChatbotBufferRef.current = [];
       connectPromiseRef.current = null;
+      welcomeReceivedRef.current = false;
+      welcomeWaitersRef.current = [];
 
       try {
         await connectAndSend();
