@@ -21,11 +21,17 @@ export function InputBar() {
     if (e.target.value.length > 0) prepareConnection();
   };
 
+  const submit = async (value: string) => {
+    setText("");
+    const sent = await sendMessage(value);
+    // Restore the shopper's text on failure so they can retry without retyping.
+    if (!sent) setText(value);
+  };
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (text.trim().length === 0 || busy || notReady) return;
-    void sendMessage(text);
-    setText("");
+    void submit(text);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -34,8 +40,7 @@ export function InputBar() {
     if (e.shiftKey) return;
     e.preventDefault();
     if (text.trim().length === 0) return;
-    void sendMessage(text);
-    setText("");
+    void submit(text);
   };
 
   useLayoutEffect(() => {

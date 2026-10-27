@@ -267,25 +267,59 @@ describe("widgetReducer", () => {
         widgetReducer(start, { type: "SET_ERROR", error: null }).pdpQuestions,
       ).toEqual(["Q1"]);
     });
+
+    it("leaves askedQuestions untouched when restoreLastQuestion is not set", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        lastQuestion: "Q1",
+        askedQuestions: ["Q1"],
+      };
+      const next = widgetReducer(start, { type: "SET_ERROR", error: "boom" });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
+
+    it("pops the trailing lastQuestion from askedQuestions when restoreLastQuestion is true", () => {
+      // Pill click fails → the clicked pill must re-appear on the shelf.
+      // QuestionPills filters by askedQuestions, so dropping Q2 is enough.
+      const start: WidgetState = {
+        ...initialWidgetState,
+        pdpQuestions: ["Q1", "Q2"],
+        lastQuestion: "Q2",
+        askedQuestions: ["Q1", "Q2"],
+      };
+      const next = widgetReducer(start, {
+        type: "SET_ERROR",
+        error: "boom",
+        restoreLastQuestion: true,
+      });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+      expect(next.lastQuestion).toBeNull();
+    });
+
+    it("restoreLastQuestion is a no-op when lastQuestion is already null", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        askedQuestions: ["Q1"],
+        lastQuestion: null,
+      };
+      const next = widgetReducer(start, {
+        type: "SET_ERROR",
+        error: "boom",
+        restoreLastQuestion: true,
+      });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
   });
 
   describe("other actions (smoke)", () => {
-    it("SET_STATUS clears a prior error on reconnect", () => {
+    it("SET_STATUS never touches a prior error (any status)", () => {
+      // A late "connected" firing after a failed send must not wipe the toast
+      // before the shopper reads it. Error is cleared by ASK_QUESTION on the
+      // next send, by RESET_CONVERSATION, or by an explicit SET_ERROR(null).
       const start: WidgetState = { ...initialWidgetState, error: "oops" };
-      expect(widgetReducer(start, { type: "SET_STATUS", status: "connected" }).error).toBeNull();
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "connecting" }).error,
-      ).toBeNull();
-    });
-
-    it("SET_STATUS leaves a prior error alone on disconnected/reconnecting", () => {
-      const start: WidgetState = { ...initialWidgetState, error: "oops" };
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "disconnected" }).error,
-      ).toBe("oops");
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "reconnecting" }).error,
-      ).toBe("oops");
+      for (const status of ["connected", "connecting", "disconnected", "reconnecting", "idle"] as const) {
+        expect(widgetReducer(start, { type: "SET_STATUS", status }).error).toBe("oops");
+      }
     });
 
     it("APPEND_STREAMING_TOKEN appends to streamingText", () => {

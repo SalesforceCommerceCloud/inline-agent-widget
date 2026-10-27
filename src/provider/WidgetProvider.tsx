@@ -18,8 +18,13 @@ function isMessageTooLong(err: unknown): boolean {
   );
 }
 
+function isWelcomeTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === "welcome_timeout";
+}
+
 function toUserMessage(err: unknown): string {
   if (isMessageTooLong(err)) return "Message exceeds the maximum length of 4,000 characters.";
+  if (isWelcomeTimeout(err)) return "Taking longer than expected to connect. Try again.";
   if (err instanceof AgentforceNetworkError) return "Unable to reach the server. Please try again.";
   return "Something went wrong. Please try again.";
 }
@@ -438,7 +443,7 @@ export function WidgetProvider({
     } catch (firstErr) {
       if (isMessageTooLong(firstErr)) {
         dispatch({ type: "SET_AGENT_TYPING", typing: false });
-        dispatch({ type: "SET_ERROR", error: toUserMessage(firstErr) });
+        dispatch({ type: "SET_ERROR", error: toUserMessage(firstErr), restoreLastQuestion: true });
         return false;
       }
 
@@ -462,7 +467,7 @@ export function WidgetProvider({
           console.error("[Agentforce] retry also failed:", retryErr);
         }
         dispatch({ type: "SET_AGENT_TYPING", typing: false });
-        dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr) });
+        dispatch({ type: "SET_ERROR", error: toUserMessage(retryErr), restoreLastQuestion: true });
         dispatch({ type: "SET_STATUS", status: "disconnected" });
         return false;
       }

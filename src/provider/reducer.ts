@@ -17,14 +17,10 @@ export const initialWidgetState: WidgetState = {
 export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetState {
   switch (action.type) {
     case "SET_STATUS":
-      return {
-        ...state,
-        status: action.status,
-        // Clear a prior error once we're healthy again.
-        ...(action.status === "connected" || action.status === "connecting"
-          ? { error: null }
-          : {}),
-      };
+      // Error is cleared by ASK_QUESTION / RESET_CONVERSATION / explicit
+      // SET_ERROR(null), not here — a late "connected" after a failed send
+      // would otherwise wipe the toast before the shopper could read it.
+      return { ...state, status: action.status };
 
     case "ASK_QUESTION":
       return {
@@ -57,12 +53,25 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
     case "SET_AGENT_TYPING":
       return { ...state, agentTyping: action.typing };
 
-    case "SET_ERROR":
+    case "SET_ERROR": {
+      if (!action.error) return { ...state, error: null };
+      // On a failed send, drop the trailing asked question so the opener pill
+      // the shopper clicked re-renders (QuestionPills filters by askedQuestions).
+      // Typed text is restored by InputBar on sendMessage() => false.
+      const nextAsked =
+        action.restoreLastQuestion && state.lastQuestion
+          ? state.askedQuestions.filter((q) => q !== state.lastQuestion)
+          : state.askedQuestions;
       return {
         ...state,
         error: action.error,
-        ...(action.error ? { lastQuestion: null, answer: null, streamingText: "", agentTyping: false } : {}),
+        lastQuestion: null,
+        answer: null,
+        streamingText: "",
+        agentTyping: false,
+        askedQuestions: nextAsked,
       };
+    }
 
     case "SET_CONNECTION_READY":
       return { ...state, connectionReady: action.ready };
