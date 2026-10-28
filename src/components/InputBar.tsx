@@ -10,32 +10,35 @@ import { useWidget } from "../provider/context";
 import { SendIcon } from "./icons";
 
 export function InputBar() {
-  const { sendMessage, prepareConnection, config, state } = useWidget();
+  const { sendMessage, config, state } = useWidget();
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const busy = state.agentTyping || state.streamingText.length > 0;
-  const notReady = !state.connectionReady;
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
-    if (e.target.value.length > 0) prepareConnection();
+  };
+
+  const submit = async (value: string) => {
+    setText("");
+    const sent = await sendMessage(value);
+    // Restore the shopper's text on failure so they can retry without retyping.
+    if (!sent) setText(value);
   };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (text.trim().length === 0 || busy || notReady) return;
-    void sendMessage(text);
-    setText("");
+    if (text.trim().length === 0 || busy) return;
+    void submit(text);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (busy || notReady) return;
+    if (busy) return;
     if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
     if (e.shiftKey) return;
     e.preventDefault();
     if (text.trim().length === 0) return;
-    void sendMessage(text);
-    setText("");
+    void submit(text);
   };
 
   useLayoutEffect(() => {
@@ -73,7 +76,7 @@ export function InputBar() {
       <button
         className="composer-send"
         type="submit"
-        disabled={text.trim().length === 0 || busy || notReady}
+        disabled={text.trim().length === 0 || busy}
         aria-label="Send question"
       >
         <SendIcon />

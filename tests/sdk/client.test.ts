@@ -334,26 +334,31 @@ describe("SSE CONVERSATION_MESSAGE handling", () => {
     client.disconnect();
   });
 
-  it("suppresses EndUser echo messages", async () => {
+  it("emits EndUser echo as user_echo (not as a chatbot message)", async () => {
     const { client, stream } = await connectClient();
     const messageSpy = vi.fn();
-    const streamingSpy = vi.fn();
+    const echoSpy = vi.fn();
     client.on("message", messageSpy);
-    client.on("streaming_token", streamingSpy);
+    client.on("user_echo", echoSpy);
 
     stream.pushEvent("CONVERSATION_MESSAGE", {
       conversationEntry: {
         identifier: "echo-1",
         sender: { role: "EndUser" },
+        transcriptedTimestamp: "2026-10-08T18:00:05.000Z",
         entryPayload: JSON.stringify({
           abstractMessage: { staticContent: { text: "my own message" } },
         }),
       },
     });
-    // A trailing agent event we CAN observe, to prove the stream is flowing.
-    stream.pushEvent("CONVERSATION_STREAMING_TOKEN", { token: "hi" });
 
-    await vi.waitFor(() => expect(streamingSpy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(echoSpy).toHaveBeenCalled());
+    expect(echoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: "echo-1",
+        timestamp: "2026-10-08T18:00:05.000Z",
+      }),
+    );
     expect(messageSpy).not.toHaveBeenCalled();
 
     client.disconnect();

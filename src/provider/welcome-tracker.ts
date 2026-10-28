@@ -1,130 +1,81 @@
 /**
- * Welcome-tracker: pure classifier for incoming Agentforce events.
+ * Welcome-tracker: position-based classifier for Chatbot SSE entries.
  *
  * Agentforce auto-emits a "welcome" greeting the instant a conversation is
- * created, before the shopper has sent anything. The widget drops that
- * greeting so an idle PDP never shows unsolicited bot text. The subtle part
- * is that this greeting can arrive in several timing windows relative to
- * the shopper's first POST, and misidentifying it leads to one of two
- * visible bugs:
+ * created, before the shopper has sent anything. We drop that greeting so
+ * an idle PDP never shows unsolicited bot text. The hard part is telling
+ * it apart from the real answer when both can arrive in any order.
  *
- *   A) The welcome renders as if it were the answer (welcome leaks).
- *   B) The real answer is dropped as if it were the welcome (answer
- *      swallowed, "first-click never answers").
+ * The earlier timing-based classifier (hasUserSent + welcomeDropped +
+ * 5s gate) failed on answer-before-welcome: when the handshake took >5s
+ * the gate timed out, hasUserSent flipped on sendMessage() resolve, and
+ * if the real answer arrived before the welcome it got labelled "late
+ * welcome" and dropped — while the actual welcome then rendered as the
+ * answer. That's the bug the screenshot captured.
  *
- * This module answers one question — "what should I do with this message
- * event / streaming token?" — given only pure booleans. All the stateful
- * ref juggling (gate open/close, timeouts) stays in WidgetProvider; this
- * is behavior under test.
+ * This classifier uses a different signal: the EndUser echo's server
+ * `transcriptedTimestamp`. SCRT2 emits an EndUser CONVERSATION_MESSAGE
+ * for every accepted POST; its server timestamp is a cutoff all other
+ * entries can be compared against. Welcome's ts is from conversation-
+ * create (before the echo). Answer's ts is from after the POST (after
+ * the echo). Server-generated, so no clock skew.
  *
- * See WidgetProvider.tsx for the ref wiring and `welcome-gate.ts` for the
- * send-side guard (which holds the user POST until the welcome has
- * resolved — a separate concern from classifying inbound events).
+ * Entries that arrive BEFORE the echo cutoff must be buffered — we don't
+ * yet know the cutoff. On echo arrival the buffer drains and classifies
+ * by timestamp.
  */
 
-/**
- * Who sent the message. `end-user` is the EndUser echo Agentforce sends
- * back for the user's own POST; `chatbot` is everything else (Agent,
- * Supervisor, Chatbot — any non-EndUser role).
- */
-export type SenderKind = "chatbot" | "end-user";
-
-/**
- * The two durable booleans the classifier reads. Both start false; both
- * live as refs in WidgetProvider so handlers see the latest without being
- * re-registered on each render.
- */
+/** The two timestamps the classifier needs. Both are server-emitted
+ *  ISO-8601 strings; string comparison is correct for ISO-8601 UTC. */
 export interface TrackerContext {
-  /**
-   * True once the shopper has successfully sent their first message AND
-   * the SDK's sendMessage() has resolved. Flipped by WidgetProvider after
-   * `await client.sendMessage(...)` returns. Pre-send, every Chatbot
-   * message is the welcome by construction (nothing else can be there).
-   */
-  hasUserSent: boolean;
-  /**
-   * True once ANY Chatbot message has been seen and dropped as "the
-   * welcome". Durable — outlives the send-side gate's 5s timeout so a
-   * late-arriving welcome (slow agent) is still correctly identified.
-   */
-  welcomeDropped: boolean;
-  /**
-   * Whether the send-side welcome gate is still pending. Used only to
-   * tell callers "you also need to close the gate / enable send here"
-   * when consuming the welcome in the pre-send branch. Classifier itself
-   * does NOT change its verdict based on this — any Chatbot message
-   * pre-send is the welcome regardless of gate state (the gate may have
-   * timed out before the welcome landed).
-   */
-  gatePending: boolean;
+  /** The EndUser echo's transcriptedTimestamp, once observed. Null until
+   *  SCRT2 echoes the user's POST. All Chatbot entries arriving before
+   *  this is set are buffered by the caller. */
+  echoTimestamp: string | null;
 }
 
 /**
- * Verdict for a single `message` SSE event.
+ * Verdict for a Chatbot CONVERSATION_MESSAGE.
  *
- * - `drop-welcome` — the message is Agentforce's auto-greeting. Caller
- *   must flip `welcomeDropped` to true and, if `wasPending` is true, also
- *   close the send-side gate + clear its timeout + enable the send button
- *   (the welcome arrived during the gate's window, which is the signal
- *   the handshake completed successfully).
- * - `render-answer` — a Chatbot message after the welcome has been
- *   consumed and the shopper has engaged. Caller dispatches SET_ANSWER.
- * - `ignore` — EndUser echo (pre- or post-send) or any other state we
- *   deliberately don't render.
+ * - `drop-welcome` — entry is at or before the echo cutoff → pre-POST
+ *   greeting. Caller must not render it.
+ * - `render-answer` — entry is strictly after the echo cutoff → shopper's
+ *   answer. Caller dispatches SET_ANSWER.
+ * - `buffer` — echo cutoff not yet known. Caller stashes the entry and
+ *   replays it through the classifier once echoTimestamp is set.
  */
 export type MessageVerdict =
-  | { action: "drop-welcome"; wasPending: boolean }
+  | { action: "drop-welcome" }
   | { action: "render-answer" }
-  | { action: "ignore" };
+  | { action: "buffer" };
 
 /**
- * Classify a `message` SSE event. Pure function — same inputs always
- * produce the same output.
+ * Classify a Chatbot `message` SSE event. Pure function.
+ *
+ * @param messageTimestamp - The entry's server `transcriptedTimestamp`.
+ * @param ctx - Current echo cutoff (null until the EndUser echo lands).
  */
 export function classifyMessage(
-  sender: SenderKind,
+  messageTimestamp: string,
   ctx: TrackerContext,
 ): MessageVerdict {
-  const isChatbot = sender === "chatbot";
-
-  if (!ctx.hasUserSent) {
-    // Pre-send: ANY Chatbot message is the welcome (the shopper hasn't
-    // engaged yet, so nothing else can be here). Must flip welcomeDropped
-    // regardless of gate state — the gate may have already timed out, in
-    // which case we still need to mark the welcome consumed so a later
-    // post-send branch doesn't mistake the real answer for the welcome.
-    if (isChatbot) return { action: "drop-welcome", wasPending: ctx.gatePending };
-    // Pre-send EndUser echo (shouldn't happen; defensive): ignore.
-    return { action: "ignore" };
-  }
-
-  // Post-send.
-  if (isChatbot && !ctx.welcomeDropped) {
-    // Slow-agent window: welcome didn't arrive before the gate timeout
-    // closed and the shopper POSTed; it's landing now, after the POST.
-    // Drop it. wasPending is false here — if the gate were still pending
-    // we'd be in the pre-send branch above (hasUserSent is only flipped
-    // after sendMessage() resolves, which it can't have before the gate
-    // timed out).
-    return { action: "drop-welcome", wasPending: false };
-  }
-  if (isChatbot) return { action: "render-answer" };
-  // EndUser echo post-send: nothing to render; the user bubble was
-  // already shown optimistically by ASK_QUESTION.
-  return { action: "ignore" };
+  if (ctx.echoTimestamp === null) return { action: "buffer" };
+  // ISO-8601 UTC strings sort lexicographically. Welcome's server-ts is
+  // from conversation-create (<= echo); answer's ts is strictly after.
+  if (messageTimestamp <= ctx.echoTimestamp) return { action: "drop-welcome" };
+  return { action: "render-answer" };
 }
 
 /**
- * Whether an `APPEND_STREAMING_TOKEN` dispatch is safe for the current
- * context. Mirrors the message classifier: tokens before the user has
- * engaged belong to the welcome stream; tokens after the user has engaged
- * but before any welcome `message` has been consumed STILL belong to the
- * welcome stream (slow agent streaming the welcome text while the user
- * POST races ahead). Only tokens post-send + post-welcome are real
- * answer tokens.
+ * Whether a streaming token should be appended. Same signal: tokens that
+ * stream in before the echo cutoff belong to the welcome; tokens after
+ * belong to the answer. Streaming tokens lack their own server-ts, so
+ * we proxy via the EndUser echo being observed: once the echo lands, any
+ * subsequent streaming token is answer-side by construction (SCRT2
+ * delivers entries in server order over the SSE stream).
  */
 export function shouldAppendStreamingToken(
-  ctx: Pick<TrackerContext, "hasUserSent" | "welcomeDropped">,
+  ctx: Pick<TrackerContext, "echoTimestamp">,
 ): boolean {
-  return ctx.hasUserSent && ctx.welcomeDropped;
+  return ctx.echoTimestamp !== null;
 }

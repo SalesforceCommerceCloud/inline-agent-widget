@@ -97,13 +97,6 @@ export interface WidgetState {
   error: string | null;
   /** The shopper's last question, displayed as a bubble above the answer. */
   lastQuestion: string | null;
-  /**
-   * `true` when the widget is ready to accept a user message. Goes `false`
-   * while a fresh handshake is in progress (waiting for the agent's automatic
-   * welcome greeting to arrive and be suppressed), then `true` once the
-   * welcome is consumed or a safety timeout fires.
-   */
-  connectionReady: boolean;
   /** Opener question pills for the current product. Empty when unset. */
   pdpQuestions: string[];
   /** Follow-up suggestions from the agent's latest response. Populated by SET_ANSWER,
@@ -130,8 +123,7 @@ export type WidgetAction =
   // The final, authoritative answer content for the current question.
   | { type: "SET_ANSWER"; content: string }
   | { type: "SET_AGENT_TYPING"; typing: boolean }
-  | { type: "SET_ERROR"; error: string | null }
-  | { type: "SET_CONNECTION_READY"; ready: boolean }
+  | { type: "SET_ERROR"; error: string | null; restoreLastQuestion?: boolean }
   | { type: "RESET_CONVERSATION" }
   | { type: "SET_PDP_QUESTIONS"; questions: string[] };
 
@@ -146,11 +138,5 @@ export interface WidgetContextValue {
    * handshake/send failed (an error is dispatched in that case).
    */
   sendMessage: (text: string) => Promise<boolean>;
-  /**
-   * Warm up the SCRT2 handshake (token → SSE → conversation) ahead of the first
-   * send — call when the user starts typing. Idempotent, non-blocking, and safe
-   * to call repeatedly; failures are swallowed (the send will retry/report).
-   */
-  prepareConnection: () => void;
   config: WidgetConfig;
 }

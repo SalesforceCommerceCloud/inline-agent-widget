@@ -269,11 +269,13 @@ export class AgentforceClient extends TypedEventEmitter {
    * @param contextVariables - Optional external Agentforce variables for this
    *                           turn. SCRT2 session context is ephemeral, so pass
    *                           them again on every applicable message.
+   * @returns The client-generated message identifier (correlates with the
+   *   `user_echo` SSE event's `messageId`).
    */
   async sendMessage(
     text: string,
     contextVariables?: readonly SessionContextVariable[],
-  ): Promise<void> {
+  ): Promise<string> {
     this.assertConnected();
     if (!this._conversationId) {
       throw new AgentforceClientError(
@@ -333,6 +335,7 @@ export class AgentforceClient extends TypedEventEmitter {
     }
 
     this.logger.debug(`Message sent: ${msgId}`);
+    return msgId;
   }
 
   /**
@@ -526,9 +529,18 @@ export class AgentforceClient extends TypedEventEmitter {
     const entry = data.conversationEntry;
     if (!entry) return;
 
-    // Ignore end-user echo messages
     const senderRole = entry.sender?.role || "";
-    if (senderRole === "EndUser" || senderRole === "Customer") return;
+    // EndUser echo: emit as user_echo (position cutoff for welcome vs answer)
+    // rather than discarding — provider uses the server-authoritative timestamp
+    // to tell pre-POST greetings from post-POST responses.
+    if (senderRole === "EndUser" || senderRole === "Customer") {
+      this.emit("user_echo", {
+        conversationId: this._conversationId || "",
+        messageId: entry.identifier || "",
+        timestamp: entry.transcriptedTimestamp || new Date().toISOString(),
+      });
+      return;
+    }
 
     const entryPayload = this.parseEntryPayload(entry);
 
