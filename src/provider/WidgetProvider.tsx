@@ -393,10 +393,20 @@ export function WidgetProvider({
         console.warn("[Agentforce] first attempt failed, retrying with fresh session:", firstErr);
       }
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
+      // End the SDK's conversation BEFORE resetting the FSM. ensureConnected()
+      // keys readiness on client.conversationId; leaving it set means the
+      // retry's connect() short-circuits and waits on the same missing welcome.
+      try {
+        await client.endConversation();
+      } catch {
+        // ignore — we're about to disconnect anyway
+      }
+      client.disconnect();
       clearSession(sessionKey);
       echoCutoffRef.current = null;
       pendingChatbotBufferRef.current = [];
       manager.reset();
+      if (clientRef.current !== client) return false;
 
       try {
         await connectAndSend();
