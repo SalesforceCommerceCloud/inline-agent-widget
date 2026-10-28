@@ -20,10 +20,6 @@ describe("widgetReducer", () => {
       expect(initialWidgetState.pdpQuestions).toEqual([]);
     });
 
-    it("is ready to accept input on mount (connectionReady: true)", () => {
-      expect(initialWidgetState.connectionReady).toBe(true);
-    });
-
     it("exposes askedQuestions as an empty array (never undefined)", () => {
       expect(initialWidgetState.askedQuestions).toEqual([]);
     });
@@ -124,17 +120,15 @@ describe("widgetReducer", () => {
       expect(next.followUpSuggestions).toEqual([]);
     });
 
-    it("leaves status + connectionReady untouched (connection outlives nav)", () => {
+    it("leaves status untouched (connection outlives nav)", () => {
       // The SCRT2 session is reused across PDPs — RESET_CONVERSATION is a
       // UI-level reset only, not a session teardown.
       const start: WidgetState = {
         ...initialWidgetState,
         status: "connected",
-        connectionReady: true,
       };
       const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
       expect(next.status).toBe("connected");
-      expect(next.connectionReady).toBe(true);
     });
   });
 
@@ -209,20 +203,6 @@ describe("widgetReducer", () => {
       };
       const next = widgetReducer(start, { type: "ASK_QUESTION", question: "new?" });
       expect(next.followUpSuggestions).toEqual([]);
-    });
-  });
-
-  describe("SET_CONNECTION_READY", () => {
-    it("toggles the readiness gate the pills' disabled binding reads", () => {
-      // The pill button renders `disabled={!state.connectionReady}`.
-      const start: WidgetState = { ...initialWidgetState, connectionReady: false };
-      expect(
-        widgetReducer(start, { type: "SET_CONNECTION_READY", ready: true }).connectionReady,
-      ).toBe(true);
-      expect(
-        widgetReducer(initialWidgetState, { type: "SET_CONNECTION_READY", ready: false })
-          .connectionReady,
-      ).toBe(false);
     });
   });
 

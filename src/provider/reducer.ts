@@ -8,7 +8,6 @@ export const initialWidgetState: WidgetState = {
   agentTyping: false,
   error: null,
   lastQuestion: null,
-  connectionReady: true,
   pdpQuestions: [],
   followUpSuggestions: [],
   askedQuestions: [],
@@ -72,9 +71,6 @@ export function widgetReducer(state: WidgetState, action: WidgetAction): WidgetS
         askedQuestions: nextAsked,
       };
     }
-
-    case "SET_CONNECTION_READY":
-      return { ...state, connectionReady: action.ready };
 
     case "RESET_CONVERSATION":
       // pdpQuestions left in place — they belong to the product, not the conversation.

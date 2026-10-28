@@ -66,11 +66,6 @@ export function WidgetProvider({
   // we pre-mark the cutoff as a sentinel ("beginning of time") so replayed
   // historical entries render as answers rather than being buffered.
   const pendingChatbotBufferRef = useRef<BufferedMessage[]>([]);
-  // Safety timeout: if nothing has unblocked the input within 5s of the
-  // handshake starting, re-enable Send anyway. This is a UI-liveness
-  // concern only — correctness of welcome-vs-answer is handled by the
-  // echo cutoff above and does not depend on this firing.
-  const uiReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest-callback refs so the ConnectionManager (constructed in the
   // client-mount effect) can call through them without having to re-register
   // when the useCallback identities below change on re-render.
@@ -190,7 +185,6 @@ export function WidgetProvider({
               // for the same reason — bot already joined in the prior session.
               echoCutoffRef.current = "0000-01-01T00:00:00.000Z";
               managerRef.current?.notifyWelcome();
-              dispatch({ type: "SET_CONNECTION_READY", ready: true });
               return true;
             } catch (err) {
               if (enableLogging) {
@@ -250,11 +244,6 @@ export function WidgetProvider({
       // Server-authoritative cutoff for welcome-vs-answer. Set it, then drain
       // anything we buffered pre-echo through the same classifier.
       echoCutoffRef.current = e.timestamp;
-      if (uiReadyTimeoutRef.current) {
-        clearTimeout(uiReadyTimeoutRef.current);
-        uiReadyTimeoutRef.current = null;
-      }
-      dispatch({ type: "SET_CONNECTION_READY", ready: true });
 
       const buffered = pendingChatbotBufferRef.current;
       pendingChatbotBufferRef.current = [];
@@ -306,7 +295,6 @@ export function WidgetProvider({
         dispatch({ type: "SET_ANSWER", content: "" });
         dispatch({ type: "SET_STATUS", status: "idle" });
         dispatch({ type: "SET_ERROR", error: null });
-        dispatch({ type: "SET_CONNECTION_READY", ready: true });
         return;
       }
       if (e.recoverable === false) {
@@ -321,10 +309,6 @@ export function WidgetProvider({
     return () => {
       client.off();
       if (conversationIdRef) conversationIdRef.current = null;
-      if (uiReadyTimeoutRef.current) {
-        clearTimeout(uiReadyTimeoutRef.current);
-        uiReadyTimeoutRef.current = null;
-      }
       manager.dispose();
       // Capture BEFORE endConversation() nulls it. NOTE: on a full (non-SPA)
       // page navigation this cleanup does NOT run — the JS context is destroyed
@@ -343,15 +327,6 @@ export function WidgetProvider({
   // their typing time. Idempotent and non-blocking.
   const onHandshakeStart = useCallback(() => {
     dispatch({ type: "SET_STATUS", status: "connecting" });
-    dispatch({ type: "SET_CONNECTION_READY", ready: false });
-    if (uiReadyTimeoutRef.current) clearTimeout(uiReadyTimeoutRef.current);
-    uiReadyTimeoutRef.current = setTimeout(() => {
-      // UI-liveness fallback only. The echo cutoff is still null; any
-      // Chatbot entry that lands before the eventual echo (if any) is
-      // still buffered and will be classified correctly on arrival.
-      uiReadyTimeoutRef.current = null;
-      dispatch({ type: "SET_CONNECTION_READY", ready: true });
-    }, 5000);
   }, []);
 
   const onConversationCreated = useCallback(() => {
