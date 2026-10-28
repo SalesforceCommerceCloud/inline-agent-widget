@@ -88,11 +88,11 @@ export class ConnectionManager {
   }
 
   /**
-   * Signal that the first Chatbot SSE entry has arrived. Idempotent — only
-   * the first call flips the gate and drains waiters. Transitions
-   * CONVERSATION_READY → READY.
+   * Signal that the bot has joined — the first Chatbot SSE entry proves it.
+   * Safe to call on every Chatbot entry; only the first flips the gate,
+   * drains waiters, and transitions CONVERSATION_READY → READY.
    */
-  notifyWelcome(): void {
+  notifyBotJoined(): void {
     if (this.welcomeReceived) return;
     this.welcomeReceived = true;
     const waiters = this.welcomeWaiters;

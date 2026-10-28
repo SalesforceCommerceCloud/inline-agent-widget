@@ -187,7 +187,7 @@ export function WidgetProvider({
               // so historical replays stay buffered until the shopper's own
               // user_echo establishes a real cutoff; prevents a stale answer
               // from rendering under a newly-posted question.
-              managerRef.current?.notifyWelcome();
+              managerRef.current?.notifyBotJoined();
               return true;
             } catch (err) {
               if (enableLogging) {
@@ -262,7 +262,7 @@ export function WidgetProvider({
       // First Chatbot entry on the stream = bot has joined (welcome). The
       // manager flips the gate, drains any waiting send, and transitions
       // CONVERSATION_READY → READY. Subsequent fires are no-ops.
-      manager.notifyWelcome();
+      manager.notifyBotJoined();
       // EndUser echoes come through user_echo now; this handler sees only
       // Chatbot (Agent / Supervisor / Chatbot role) entries.
       if (echoCutoffRef.current === null) {

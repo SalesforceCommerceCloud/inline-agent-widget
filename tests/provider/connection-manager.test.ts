@@ -10,7 +10,7 @@ import type { ConnectableClient, SessionPersistence } from "../../src/provider/e
  * Behavioral contracts under test:
  *   - State transitions: NOT_STARTED → TRANSPORT_CONNECTING → CONVERSATION_READY → READY
  *   - FAILED on handshake failure; next connect() retries from FAILED
- *   - notifyWelcome() drains waitForWelcome() waiters (single-shot)
+ *   - notifyBotJoined() drains waitForWelcome() waiters (single-shot)
  *   - waitForWelcome() rejects with Error("welcome_timeout") on timeout
  *   - reset() returns to NOT_STARTED and clears welcome gate + waiters
  *   - persistSave() delegates to the injected adapter (no-op without one)
@@ -80,11 +80,11 @@ describe("ConnectionManager", () => {
       expect(m.state).toBe("CONVERSATION_READY");
     });
 
-    it("transitions CONVERSATION_READY → READY on notifyWelcome()", async () => {
+    it("transitions CONVERSATION_READY → READY on notifyBotJoined()", async () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
       await m.connect();
-      m.notifyWelcome();
+      m.notifyBotJoined();
       expect(m.state).toBe("READY");
       expect(m.hasWelcome).toBe(true);
     });
@@ -95,7 +95,7 @@ describe("ConnectionManager", () => {
       // sees hasWelcome=true and advances to READY directly.
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
-      m.notifyWelcome();
+      m.notifyBotJoined();
       await m.connect();
       expect(m.state).toBe("READY");
     });
@@ -153,15 +153,15 @@ describe("ConnectionManager", () => {
     it("waitForWelcome() resolves immediately when welcome already received", async () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
-      m.notifyWelcome();
+      m.notifyBotJoined();
       await expect(m.waitForWelcome(1000)).resolves.toBeUndefined();
     });
 
-    it("waitForWelcome() resolves when notifyWelcome() is called later", async () => {
+    it("waitForWelcome() resolves when notifyBotJoined() is called later", async () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
       const p = m.waitForWelcome(10000);
-      m.notifyWelcome();
+      m.notifyBotJoined();
       await expect(p).resolves.toBeUndefined();
     });
 
@@ -173,7 +173,7 @@ describe("ConnectionManager", () => {
       await expect(p).rejects.toThrow("welcome_timeout");
     });
 
-    it("notifyWelcome() is idempotent — second call does not re-drain or re-transition", async () => {
+    it("notifyBotJoined() is idempotent — second call does not re-drain or re-transition", async () => {
       const { client } = makeFakeClient();
       const transitions: string[] = [];
       const m = new ConnectionManager({
@@ -181,20 +181,20 @@ describe("ConnectionManager", () => {
         onStateChange: (prev, next) => transitions.push(`${prev}->${next}`),
       });
       await m.connect();
-      m.notifyWelcome();
+      m.notifyBotJoined();
       transitions.length = 0;
-      m.notifyWelcome(); // second time
+      m.notifyBotJoined(); // second time
       expect(transitions).toEqual([]);
       expect(m.state).toBe("READY");
     });
 
-    it("drains multiple concurrent waiters on notifyWelcome()", async () => {
+    it("drains multiple concurrent waiters on notifyBotJoined()", async () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
       const a = m.waitForWelcome(10000);
       const b = m.waitForWelcome(10000);
       const c = m.waitForWelcome(10000);
-      m.notifyWelcome();
+      m.notifyBotJoined();
       await expect(Promise.all([a, b, c])).resolves.toEqual([undefined, undefined, undefined]);
     });
 
@@ -203,8 +203,8 @@ describe("ConnectionManager", () => {
       const m = new ConnectionManager({ client });
       const p = m.waitForWelcome(100).catch((e) => e.message);
       vi.advanceTimersByTime(100);
-      // A subsequent notifyWelcome must not affect the already-rejected waiter.
-      m.notifyWelcome();
+      // A subsequent notifyBotJoined must not affect the already-rejected waiter.
+      m.notifyBotJoined();
       await expect(p).resolves.toBe("welcome_timeout");
     });
   });
@@ -214,7 +214,7 @@ describe("ConnectionManager", () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
       await m.connect();
-      m.notifyWelcome();
+      m.notifyBotJoined();
       expect(m.state).toBe("READY");
 
       m.reset();
@@ -231,8 +231,8 @@ describe("ConnectionManager", () => {
         () => { settled = "rejected"; },
       );
       m.reset();
-      // A late notifyWelcome must not resolve the old waiter.
-      m.notifyWelcome();
+      // A late notifyBotJoined must not resolve the old waiter.
+      m.notifyBotJoined();
       // The leaked timer, if present, would fire here and reject.
       vi.advanceTimersByTime(10000);
       await Promise.resolve();
