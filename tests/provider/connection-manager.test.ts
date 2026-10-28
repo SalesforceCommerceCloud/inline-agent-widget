@@ -222,22 +222,42 @@ describe("ConnectionManager", () => {
       expect(m.hasWelcome).toBe(false);
     });
 
-    it("drops pending waiters so they do not resolve post-reset", async () => {
+    it("drops pending waiters and cancels their timers so neither resolve nor reject fires post-reset", async () => {
       const { client } = makeFakeClient();
       const m = new ConnectionManager({ client });
-      let resolved = false;
-      const p = m.waitForWelcome(10000).then(() => {
-        resolved = true;
-      });
+      let settled: "resolved" | "rejected" | null = null;
+      void m.waitForWelcome(10000).then(
+        () => { settled = "resolved"; },
+        () => { settled = "rejected"; },
+      );
       m.reset();
-      // After reset, a new notifyWelcome must NOT resolve the old waiter.
+      // A late notifyWelcome must not resolve the old waiter.
       m.notifyWelcome();
-      // Flush microtasks.
-      await Promise.resolve();
-      expect(resolved).toBe(false);
-      // Advance to the waiter's own timeout so the suite doesn't hang.
+      // The leaked timer, if present, would fire here and reject.
       vi.advanceTimersByTime(10000);
-      await expect(p.catch((e) => e.message)).resolves.toBe("welcome_timeout");
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(settled).toBe(null);
+    });
+  });
+
+  describe("dispose()", () => {
+    it("cancels pending waiter timers so a late timeout does not fire post-dispose", async () => {
+      const { client } = makeFakeClient();
+      const m = new ConnectionManager({ client });
+      let settled: "resolved" | "rejected" | null = null;
+      void m.waitForWelcome(6000).then(
+        () => { settled = "resolved"; },
+        () => { settled = "rejected"; },
+      );
+      m.dispose();
+      // If the timer still existed, this would reject the waiter — regressing
+      // the bug Chintan reported where the stranded timer entered the retry
+      // path post-unmount and corrupted a replacement provider's state.
+      vi.advanceTimersByTime(6000);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(settled).toBe(null);
     });
   });
 

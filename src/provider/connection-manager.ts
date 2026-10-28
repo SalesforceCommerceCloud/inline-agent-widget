@@ -61,7 +61,10 @@ export class ConnectionManager {
   // Shape-compatible with ensureConnected's PromiseHolder.
   private readonly promiseHolder: PromiseHolder = { current: null };
   private welcomeReceived = false;
-  private welcomeWaiters: Array<() => void> = [];
+  // Each pending waitForWelcome call registers a resolver + its timer id so
+  // dispose/reset can cancel both; a stranded timer firing post-unmount
+  // rejects into the retry path and racks up wasted handshake requests.
+  private welcomeWaiters: Array<{ resolve: () => void; timer: ReturnType<typeof setTimeout> | null }> = [];
 
   constructor(opts: ConnectionManagerOptions) {
     this.client = opts.client;
@@ -94,7 +97,10 @@ export class ConnectionManager {
     this.welcomeReceived = true;
     const waiters = this.welcomeWaiters;
     this.welcomeWaiters = [];
-    for (const resolve of waiters) resolve();
+    for (const w of waiters) {
+      if (w.timer) clearTimeout(w.timer);
+      w.resolve();
+    }
     if (this._state === "CONVERSATION_READY") this.setState("READY");
   }
 
@@ -141,15 +147,16 @@ export class ConnectionManager {
         resolve();
         return;
       }
-      const resolveOnce = () => {
-        clearTimeout(timer);
-        resolve();
+      const waiter: { resolve: () => void; timer: ReturnType<typeof setTimeout> | null } = {
+        resolve,
+        timer: null,
       };
-      const timer = setTimeout(() => {
-        this.welcomeWaiters = this.welcomeWaiters.filter((w) => w !== resolveOnce);
+      waiter.timer = setTimeout(() => {
+        waiter.timer = null;
+        this.welcomeWaiters = this.welcomeWaiters.filter((w) => w !== waiter);
         reject(new Error("welcome_timeout"));
       }, timeoutMs);
-      this.welcomeWaiters.push(resolveOnce);
+      this.welcomeWaiters.push(waiter);
     });
   }
 
@@ -160,7 +167,7 @@ export class ConnectionManager {
   reset(): void {
     this.promiseHolder.current = null;
     this.welcomeReceived = false;
-    this.welcomeWaiters = [];
+    this.cancelWelcomeWaiters();
     this.setState("NOT_STARTED");
   }
 
@@ -169,8 +176,16 @@ export class ConnectionManager {
     this.persistence?.save();
   }
 
-  /** Drain any outstanding welcome waiters without resolving them — teardown. */
+  /** Drain any outstanding welcome waiters without resolving them — teardown.
+   *  Timers are cleared so a stranded reject doesn't fire post-unmount. */
   dispose(): void {
+    this.cancelWelcomeWaiters();
+  }
+
+  private cancelWelcomeWaiters(): void {
+    for (const w of this.welcomeWaiters) {
+      if (w.timer) clearTimeout(w.timer);
+    }
     this.welcomeWaiters = [];
   }
 
