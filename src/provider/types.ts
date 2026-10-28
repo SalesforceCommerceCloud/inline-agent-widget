@@ -138,11 +138,5 @@ export interface WidgetContextValue {
    * handshake/send failed (an error is dispatched in that case).
    */
   sendMessage: (text: string) => Promise<boolean>;
-  /**
-   * Warm up the SCRT2 handshake (token → SSE → conversation) ahead of the first
-   * send — call when the user starts typing. Idempotent, non-blocking, and safe
-   * to call repeatedly; failures are swallowed (the send will retry/report).
-   */
-  prepareConnection: () => void;
   config: WidgetConfig;
 }

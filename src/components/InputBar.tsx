@@ -10,14 +10,13 @@ import { useWidget } from "../provider/context";
 import { SendIcon } from "./icons";
 
 export function InputBar() {
-  const { sendMessage, prepareConnection, config, state } = useWidget();
+  const { sendMessage, config, state } = useWidget();
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const busy = state.agentTyping || state.streamingText.length > 0;
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
-    if (e.target.value.length > 0) prepareConnection();
   };
 
   const submit = async (value: string) => {
@@ -57,9 +56,6 @@ export function InputBar() {
         rows={1}
         value={text}
         onChange={onChange}
-        onFocus={prepareConnection}
-        onPointerDown={prepareConnection}
-        onTouchStart={prepareConnection}
         onKeyDown={onKeyDown}
         placeholder={
           // Precedence: explicit `placeholder` config (host override) wins —

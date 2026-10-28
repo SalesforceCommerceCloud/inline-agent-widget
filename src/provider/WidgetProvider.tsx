@@ -337,15 +337,6 @@ export function WidgetProvider({
   useEffect(() => { onHandshakeStartRef.current = onHandshakeStart; }, [onHandshakeStart]);
   useEffect(() => { onConversationCreatedRef.current = onConversationCreated; }, [onConversationCreated]);
 
-  const prepareConnection = useCallback(() => {
-    const manager = managerRef.current;
-    if (!manager) return;
-    void manager.connect().catch(() => {
-      // Swallow — surfacing a connect error while the user is merely typing
-      // would be noise. sendMessage() will retry and report if it still fails.
-    });
-  }, []);
-
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
     const manager = managerRef.current;
@@ -428,8 +419,8 @@ export function WidgetProvider({
   }, [enableLogging, orgId, esDeveloperName]);
 
   const value = useMemo(
-    () => ({ state, dispatch, sendMessage, prepareConnection, config }),
-    [state, sendMessage, prepareConnection, config],
+    () => ({ state, dispatch, sendMessage, config }),
+    [state, sendMessage, config],
   );
 
   return <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>;

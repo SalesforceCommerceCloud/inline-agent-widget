@@ -1,6 +1,4 @@
-import { useEffect, useRef } from "react";
 import { WidgetProvider } from "./provider/WidgetProvider";
-import { useWidget } from "./provider/context";
 import { InputBar } from "./components/InputBar";
 import { QuestionPills } from "./components/QuestionPills";
 import { Response } from "./components/Response";
@@ -24,35 +22,8 @@ export function App({
 }
 
 function WidgetShell() {
-  const { prepareConnection } = useWidget();
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // Primary trigger: pre-warm the SCRT2 handshake when the widget scrolls into
-  // view. Modality-agnostic (works for scrollers, screen readers, keyboard).
-  // Fires once per mount; pointer/focus handlers on pills + InputBar accelerate
-  // the escalation to conversation-create for interacting shoppers.
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    let fired = false;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting || fired) continue;
-          fired = true;
-          prepareConnection();
-          io.disconnect();
-          return;
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [prepareConnection]);
-
   return (
-    <div className="widget" ref={rootRef}>
+    <div className="widget">
       <header className="widget-header">
         <div className="widget-header-brand">
           <span className="header-icon-wrap">
