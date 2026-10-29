@@ -114,7 +114,7 @@ describe("widgetReducer", () => {
     it("clears followUpSuggestions (they belong to the conversation, not the product)", () => {
       const start: WidgetState = {
         ...initialWidgetState,
-        followUpSuggestions: ["follow-up A"],
+        followUpSuggestions: [{ text: "follow-up A" }],
       };
       const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
       expect(next.followUpSuggestions).toEqual([]);
@@ -199,7 +199,7 @@ describe("widgetReducer", () => {
     it("clears followUpSuggestions so stale suggestions don't linger while the next answer loads", () => {
       const start: WidgetState = {
         ...initialWidgetState,
-        followUpSuggestions: ["follow-up A", "follow-up B"],
+        followUpSuggestions: [{ text: "follow-up A" }, { text: "follow-up B" }],
       };
       const next = widgetReducer(start, { type: "ASK_QUESTION", question: "new?" });
       expect(next.followUpSuggestions).toEqual([]);
@@ -341,15 +341,15 @@ describe("widgetReducer", () => {
       const next = widgetReducer(initialWidgetState, { type: "SET_ANSWER", content: envelope });
       expect(next.answer).toBe("The vest is windproof.");
       expect(next.followUpSuggestions).toEqual([
-        "Is it suitable for layering?",
-        "Does it pack down small for travel?",
+        { text: "Is it suitable for layering?" },
+        { text: "Does it pack down small for travel?" },
       ]);
     });
 
     it("SET_ANSWER sets followUpSuggestions to [] for plain-text answers", () => {
       const start: WidgetState = {
         ...initialWidgetState,
-        followUpSuggestions: ["stale suggestion"],
+        followUpSuggestions: [{ text: "stale suggestion" }],
       };
       const next = widgetReducer(start, { type: "SET_ANSWER", content: "plain text answer" });
       expect(next.followUpSuggestions).toEqual([]);

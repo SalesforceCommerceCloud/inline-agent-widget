@@ -139,9 +139,9 @@ describe("extractMessageSuggestions", () => {
       ],
     });
     expect(extractMessageSuggestions(envelope)).toEqual([
-      "Is it suitable for layering?",
-      "Does it pack down small for travel?",
-      "How warm is the 800-fill down?",
+      { text: "Is it suitable for layering?" },
+      { text: "Does it pack down small for travel?" },
+      { text: "How warm is the 800-fill down?" },
     ]);
   });
 
@@ -172,7 +172,9 @@ describe("extractMessageSuggestions", () => {
         },
       ],
     });
-    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B", "C"]);
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "A" }, { text: "B" }, { text: "C" },
+    ]);
   });
 
   it("caps at MAX_PDP_QUESTIONS (5)", () => {
@@ -186,7 +188,9 @@ describe("extractMessageSuggestions", () => {
       ],
     });
     expect(extractMessageSuggestions(envelope)).toHaveLength(5);
-    expect(extractMessageSuggestions(envelope)).toEqual(["Q1", "Q2", "Q3", "Q4", "Q5"]);
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "Q1" }, { text: "Q2" }, { text: "Q3" }, { text: "Q4" }, { text: "Q5" },
+    ]);
   });
 
   it("skips empty and whitespace-only strings", () => {
@@ -199,7 +203,7 @@ describe("extractMessageSuggestions", () => {
         },
       ],
     });
-    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B"]);
+    expect(extractMessageSuggestions(envelope)).toEqual([{ text: "A" }, { text: "B" }]);
   });
 
   it("returns an empty array for invalid JSON", () => {
@@ -214,6 +218,119 @@ describe("extractMessageSuggestions", () => {
         { type: "suggestions", index: 2, data: { display_text: ["C", "D"] } },
       ],
     });
-    expect(extractMessageSuggestions(envelope)).toEqual(["A", "B", "C", "D"]);
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "A" }, { text: "B" }, { text: "C" }, { text: "D" },
+    ]);
+  });
+
+  it("prefers items array over display_text when present", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: {
+            display_text: ["Is it true to size?", "Best shoe for trails?"],
+            items: [
+              { text: "Is it true to size?", answerable_by: "inline_pdp" },
+              { text: "Best shoe for trails?", answerable_by: "main_agent" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "Is it true to size?", answerable_by: "inline_pdp" },
+      { text: "Best shoe for trails?", answerable_by: "main_agent" },
+    ]);
+  });
+
+  it("items without answerable_by omit the field", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: {
+            items: [
+              { text: "Plain chip" },
+              { text: "Another plain chip" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "Plain chip" },
+      { text: "Another plain chip" },
+    ]);
+  });
+
+  it("items with mixed answerable_by preserve each value", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: {
+            items: [
+              { text: "Care instructions?", answerable_by: "inline_pdp" },
+              { text: "No metadata" },
+              { text: "Show me similar", answerable_by: "main_agent" },
+            ],
+          },
+        },
+      ],
+    });
+    const result = extractMessageSuggestions(envelope);
+    expect(result).toEqual([
+      { text: "Care instructions?", answerable_by: "inline_pdp" },
+      { text: "No metadata" },
+      { text: "Show me similar", answerable_by: "main_agent" },
+    ]);
+  });
+
+  it("ignores invalid answerable_by values", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: {
+            items: [
+              { text: "Valid", answerable_by: "inline_pdp" },
+              { text: "Bad value", answerable_by: "unknown_target" },
+            ],
+          },
+        },
+      ],
+    });
+    const result = extractMessageSuggestions(envelope);
+    expect(result[0].answerable_by).toBe("inline_pdp");
+    expect(result[1].answerable_by).toBeUndefined();
+  });
+
+  it("skips items with empty or missing text", () => {
+    const envelope = JSON.stringify({
+      response: [
+        {
+          type: "suggestions",
+          index: 0,
+          data: {
+            items: [
+              { text: "Good", answerable_by: "inline_pdp" },
+              { text: "" },
+              { text: "  " },
+              { answerable_by: "main_agent" },
+              { text: "Also good" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(extractMessageSuggestions(envelope)).toEqual([
+      { text: "Good", answerable_by: "inline_pdp" },
+      { text: "Also good" },
+    ]);
   });
 });

@@ -87,6 +87,22 @@ export type ConnectionStatus =
  * response to the most recent question. Asking a new question replaces the
  * previous answer — there is no accumulating transcript.
  */
+/**
+ * A suggestion chip from the agent, optionally tagged with routing metadata.
+ *
+ * When the BYON response includes an `items` array with `answerable_by`
+ * attributes, each suggestion carries the routing target:
+ * - `"inline_pdp"` — answerable by the PDP inline widget
+ * - `"main_agent"` — needs the full shopping assistant (catalog search, cart, etc.)
+ *
+ * When no `answerable_by` is present (non-PDP flows, or older agent versions),
+ * the field is `undefined` and the chip is handled inline as before.
+ */
+export interface SuggestionItem {
+  text: string;
+  answerable_by?: "inline_pdp" | "main_agent";
+}
+
 export interface WidgetState {
   status: ConnectionStatus;
   /** The current final agent answer, or null before the first reply. */
@@ -101,7 +117,7 @@ export interface WidgetState {
   pdpQuestions: string[];
   /** Follow-up suggestions from the agent's latest response. Populated by SET_ANSWER,
    * cleared on ASK_QUESTION and RESET_CONVERSATION. */
-  followUpSuggestions: string[];
+  followUpSuggestions: SuggestionItem[];
   /**
    * Questions the shopper has already asked in this PDP session. QuestionPills
    * filters these out so the shopper is never shown a pill they already

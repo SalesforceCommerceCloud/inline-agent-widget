@@ -22,6 +22,7 @@ export interface CommerceAgentContext {
   version: string;
   page_context_type: string;
   page_context_data: { id: string };
+  suggestion_routing?: boolean;
 }
 
 /**
@@ -110,6 +111,7 @@ export function buildPdpInlineContext(productId: string): SessionContextVariable
     version: COMMERCE_AGENT_CONTEXT_VERSION,
     page_context_type: "pdp_inline",
     page_context_data: { id: productId },
+    suggestion_routing: true,
   };
 
   return [

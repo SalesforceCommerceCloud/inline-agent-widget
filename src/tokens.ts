@@ -1,4 +1,5 @@
 import { MAX_PDP_QUESTIONS } from "./provider/pdp-questions";
+import type { SuggestionItem } from "./provider/types";
 
 /**
  * Turn the text an agent sends over the wire into something displayable.
@@ -120,8 +121,10 @@ export function extractMessageText(content: string): string {
   }
 }
 
-/** Collect `display_text` arrays from `suggestions`-typed blocks in a parsed agent payload. */
-function collectSuggestions(value: unknown): string[] {
+/** Collect suggestions from `suggestions`-typed blocks in a parsed agent payload.
+ * Prefers the richer `items` array (with `answerable_by`) when present;
+ * falls back to `display_text` for backward compatibility. */
+function collectSuggestions(value: unknown): SuggestionItem[] {
   if (!value || typeof value !== "object") return [];
 
   if (Array.isArray(value)) {
@@ -136,9 +139,27 @@ function collectSuggestions(value: unknown): string[] {
 
   if (obj.type === "suggestions") {
     const data = obj.data as Record<string, unknown> | undefined;
-    const texts = data?.display_text;
+    if (!data) return [];
+
+    const items = data.items;
+    if (Array.isArray(items)) {
+      return items
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .filter((item) => typeof item.text === "string" && item.text.trim().length > 0)
+        .map((item) => {
+          const result: SuggestionItem = { text: (item.text as string).trim() };
+          if (item.answerable_by === "inline_pdp" || item.answerable_by === "main_agent") {
+            result.answerable_by = item.answerable_by;
+          }
+          return result;
+        });
+    }
+
+    const texts = data.display_text;
     if (Array.isArray(texts)) {
-      return texts.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+      return texts
+        .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+        .map((t) => ({ text: t.trim() }));
     }
   }
 
@@ -147,7 +168,7 @@ function collectSuggestions(value: unknown): string[] {
 
 /** Extract follow-up suggestions from a final message's BYON envelope.
  * Capped at {@link MAX_PDP_QUESTIONS}. Returns `[]` for plain-text or no suggestions. */
-export function extractMessageSuggestions(content: string): string[] {
+export function extractMessageSuggestions(content: string): SuggestionItem[] {
   if (!content) return [];
 
   const trimmed = content.trim();
@@ -156,12 +177,11 @@ export function extractMessageSuggestions(content: string): string[] {
   try {
     const raw = collectSuggestions(JSON.parse(trimmed));
     const seen = new Set<string>();
-    const out: string[] = [];
-    for (const s of raw) {
-      const t = s.trim();
-      if (!t || seen.has(t)) continue;
-      seen.add(t);
-      out.push(t);
+    const out: SuggestionItem[] = [];
+    for (const item of raw) {
+      if (seen.has(item.text)) continue;
+      seen.add(item.text);
+      out.push(item);
       if (out.length >= MAX_PDP_QUESTIONS) break;
     }
     return out;
