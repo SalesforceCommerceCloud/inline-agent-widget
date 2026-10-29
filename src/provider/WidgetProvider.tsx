@@ -111,6 +111,11 @@ export function WidgetProvider({
       const currentId = resolveProductId(window.location, { productIdParam, productIdPattern });
       if (currentId !== lastProductId) {
         lastProductId = currentId;
+        // Drop the previous PDP's echo anchor + buffered pre-echo entries so a
+        // late-arriving Chatbot message from PDP A can't classify against PDP A's
+        // cutoff and render as an answer on PDP B.
+        echoCutoffRef.current = null;
+        pendingChatbotBufferRef.current = [];
         dispatch({ type: "RESET_CONVERSATION" });
       }
     };
@@ -177,14 +182,12 @@ export function WidgetProvider({
                 conversationId: stored.conversationId,
                 lastEventId: stored.lastEventId,
               });
-              // Restoring re-opens the SSE stream on an EXISTING conversation —
-              // no welcome will be emitted. Pre-set the cutoff to a sentinel
-              // in the past so any replayed historical Chatbot entry sorts
-              // AFTER it and renders as an answer (which matches the restored
-              // conversation's state). Pre-mark the welcome-gate as received
-              // for the same reason — bot already joined in the prior session.
-              echoCutoffRef.current = "0000-01-01T00:00:00.000Z";
-              managerRef.current?.notifyWelcome();
+              // Bot already joined in the prior session — flip the welcome
+              // gate so the next send doesn't wait. Leave echoCutoffRef null
+              // so historical replays stay buffered until the shopper's own
+              // user_echo establishes a real cutoff; prevents a stale answer
+              // from rendering under a newly-posted question.
+              managerRef.current?.notifyBotJoined();
               return true;
             } catch (err) {
               if (enableLogging) {
@@ -259,7 +262,7 @@ export function WidgetProvider({
       // First Chatbot entry on the stream = bot has joined (welcome). The
       // manager flips the gate, drains any waiting send, and transitions
       // CONVERSATION_READY → READY. Subsequent fires are no-ops.
-      manager.notifyWelcome();
+      manager.notifyBotJoined();
       // EndUser echoes come through user_echo now; this handler sees only
       // Chatbot (Agent / Supervisor / Chatbot role) entries.
       if (echoCutoffRef.current === null) {
@@ -393,10 +396,20 @@ export function WidgetProvider({
         console.warn("[Agentforce] first attempt failed, retrying with fresh session:", firstErr);
       }
       const sessionKey = buildSessionKey(orgId, esDeveloperName);
+      // End the SDK's conversation BEFORE resetting the FSM. ensureConnected()
+      // keys readiness on client.conversationId; leaving it set means the
+      // retry's connect() short-circuits and waits on the same missing welcome.
+      try {
+        await client.endConversation();
+      } catch {
+        // ignore — we're about to disconnect anyway
+      }
+      client.disconnect();
       clearSession(sessionKey);
       echoCutoffRef.current = null;
       pendingChatbotBufferRef.current = [];
       manager.reset();
+      if (clientRef.current !== client) return false;
 
       try {
         await connectAndSend();
