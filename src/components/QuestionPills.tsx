@@ -236,8 +236,7 @@ export function QuestionPills() {
 
   if (pills.length === 0) return null;
 
-  const busy = state.agentTyping || state.streamingText.length > 0;
-  const disabled = !state.connectionReady || busy;
+  const disabled = state.agentTyping || state.streamingText.length > 0;
 
   const hostElement =
     typeof document !== "undefined"

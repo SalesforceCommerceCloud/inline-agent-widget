@@ -20,10 +20,6 @@ describe("widgetReducer", () => {
       expect(initialWidgetState.pdpQuestions).toEqual([]);
     });
 
-    it("is ready to accept input on mount (connectionReady: true)", () => {
-      expect(initialWidgetState.connectionReady).toBe(true);
-    });
-
     it("exposes askedQuestions as an empty array (never undefined)", () => {
       expect(initialWidgetState.askedQuestions).toEqual([]);
     });
@@ -124,17 +120,15 @@ describe("widgetReducer", () => {
       expect(next.followUpSuggestions).toEqual([]);
     });
 
-    it("leaves status + connectionReady untouched (connection outlives nav)", () => {
+    it("leaves status untouched (connection outlives nav)", () => {
       // The SCRT2 session is reused across PDPs — RESET_CONVERSATION is a
       // UI-level reset only, not a session teardown.
       const start: WidgetState = {
         ...initialWidgetState,
         status: "connected",
-        connectionReady: true,
       };
       const next = widgetReducer(start, { type: "RESET_CONVERSATION" });
       expect(next.status).toBe("connected");
-      expect(next.connectionReady).toBe(true);
     });
   });
 
@@ -212,20 +206,6 @@ describe("widgetReducer", () => {
     });
   });
 
-  describe("SET_CONNECTION_READY", () => {
-    it("toggles the readiness gate the pills' disabled binding reads", () => {
-      // The pill button renders `disabled={!state.connectionReady}`.
-      const start: WidgetState = { ...initialWidgetState, connectionReady: false };
-      expect(
-        widgetReducer(start, { type: "SET_CONNECTION_READY", ready: true }).connectionReady,
-      ).toBe(true);
-      expect(
-        widgetReducer(initialWidgetState, { type: "SET_CONNECTION_READY", ready: false })
-          .connectionReady,
-      ).toBe(false);
-    });
-  });
-
   describe("SET_ERROR", () => {
     it("clears conversation state when setting an error", () => {
       const start: WidgetState = {
@@ -267,25 +247,59 @@ describe("widgetReducer", () => {
         widgetReducer(start, { type: "SET_ERROR", error: null }).pdpQuestions,
       ).toEqual(["Q1"]);
     });
+
+    it("leaves askedQuestions untouched when restoreLastQuestion is not set", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        lastQuestion: "Q1",
+        askedQuestions: ["Q1"],
+      };
+      const next = widgetReducer(start, { type: "SET_ERROR", error: "boom" });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
+
+    it("pops the trailing lastQuestion from askedQuestions when restoreLastQuestion is true", () => {
+      // Pill click fails → the clicked pill must re-appear on the shelf.
+      // QuestionPills filters by askedQuestions, so dropping Q2 is enough.
+      const start: WidgetState = {
+        ...initialWidgetState,
+        pdpQuestions: ["Q1", "Q2"],
+        lastQuestion: "Q2",
+        askedQuestions: ["Q1", "Q2"],
+      };
+      const next = widgetReducer(start, {
+        type: "SET_ERROR",
+        error: "boom",
+        restoreLastQuestion: true,
+      });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+      expect(next.lastQuestion).toBeNull();
+    });
+
+    it("restoreLastQuestion is a no-op when lastQuestion is already null", () => {
+      const start: WidgetState = {
+        ...initialWidgetState,
+        askedQuestions: ["Q1"],
+        lastQuestion: null,
+      };
+      const next = widgetReducer(start, {
+        type: "SET_ERROR",
+        error: "boom",
+        restoreLastQuestion: true,
+      });
+      expect(next.askedQuestions).toEqual(["Q1"]);
+    });
   });
 
   describe("other actions (smoke)", () => {
-    it("SET_STATUS clears a prior error on reconnect", () => {
+    it("SET_STATUS never touches a prior error (any status)", () => {
+      // A late "connected" firing after a failed send must not wipe the toast
+      // before the shopper reads it. Error is cleared by ASK_QUESTION on the
+      // next send, by RESET_CONVERSATION, or by an explicit SET_ERROR(null).
       const start: WidgetState = { ...initialWidgetState, error: "oops" };
-      expect(widgetReducer(start, { type: "SET_STATUS", status: "connected" }).error).toBeNull();
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "connecting" }).error,
-      ).toBeNull();
-    });
-
-    it("SET_STATUS leaves a prior error alone on disconnected/reconnecting", () => {
-      const start: WidgetState = { ...initialWidgetState, error: "oops" };
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "disconnected" }).error,
-      ).toBe("oops");
-      expect(
-        widgetReducer(start, { type: "SET_STATUS", status: "reconnecting" }).error,
-      ).toBe("oops");
+      for (const status of ["connected", "connecting", "disconnected", "reconnecting", "idle"] as const) {
+        expect(widgetReducer(start, { type: "SET_STATUS", status }).error).toBe("oops");
+      }
     });
 
     it("APPEND_STREAMING_TOKEN appends to streamingText", () => {
