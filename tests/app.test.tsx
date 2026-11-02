@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * App-level mode routing: inline/hybrid both mount WidgetProvider +
- * WidgetShell; agent-redirect short-circuits to AgentRedirectShim and never
+ * WidgetShell; main-agent short-circuits to MainAgentShim and never
  * mounts the provider (so no SCRT2 handshake fires).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,12 +45,12 @@ describe("App mode routing", () => {
     await act(async () => {});
   });
 
-  it("short-circuits to AgentRedirectShim for mode='agent-redirect'", () => {
+  it("short-circuits to MainAgentShim for mode='main-agent'", () => {
     const config: WidgetConfig = {
       scrt2Url: "",
       orgId: "",
       esDeveloperName: "",
-      mode: "agent-redirect",
+      mode: "main-agent",
       pdpQuestions: ["foo?"],
       productName: "Test Product",
     };

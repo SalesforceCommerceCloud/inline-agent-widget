@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * renderInto probes: config validation and unmount cleanup. The happy-path
- * agent-redirect / inline renders are covered elsewhere.
+ * main-agent / inline renders are covered elsewhere.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
@@ -64,7 +64,7 @@ describe("renderInto", () => {
     document.body.appendChild(host);
     const shadow = host.attachShadow({ mode: "open" });
 
-    const config: WidgetConfig = { ...BAD_CONFIG, mode: "agent-redirect" };
+    const config: WidgetConfig = { ...BAD_CONFIG, mode: "main-agent" };
 
     let handle: ReturnType<typeof renderInto> | null = null;
     await act(async () => {
@@ -82,14 +82,14 @@ describe("renderInto", () => {
     expect(shadow.querySelector("style")).toBeNull();
   });
 
-  it("update() re-renders with a new config in agent-redirect mode", async () => {
+  it("update() re-renders with a new config in main-agent mode", async () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const shadow = host.attachShadow({ mode: "open" });
 
     const initial: WidgetConfig = {
       ...BAD_CONFIG,
-      mode: "agent-redirect",
+      mode: "main-agent",
       productName: "Original",
     };
 

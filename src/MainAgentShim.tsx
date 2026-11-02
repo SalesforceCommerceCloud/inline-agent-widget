@@ -18,13 +18,13 @@ export interface HandoffEventDetail {
 }
 
 /**
- * Non-conversational shim used in `mode="agent-redirect"`. Paints the same
+ * Non-conversational shim used in `mode="main-agent"`. Paints the same
  * header + pills + input as the inline widget, but every pill click or form
  * submit dispatches a bubbling `inline-agent-widget:handoff` CustomEvent on
  * the host element instead of talking to SCRT2. The host storefront catches
  * the event and opens its main Shopper Agent drawer with the question seeded.
  */
-export function AgentRedirectShim({
+export function MainAgentShim({
   config,
   hostElement,
 }: {

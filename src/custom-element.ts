@@ -20,7 +20,7 @@ const OBSERVED = [
 ] as const;
 
 function readMode(value: string | undefined): WidgetConfig["mode"] {
-  if (value === "agent-redirect" || value === "hybrid" || value === "inline") {
+  if (value === "main-agent" || value === "hybrid" || value === "inline") {
     return value;
   }
   return undefined;
