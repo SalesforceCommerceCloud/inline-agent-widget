@@ -18,9 +18,11 @@ const REQUIRED_MESSAGE_SCRT2 =
 
 /**
  * Validate the connection config. Returns an error message to render, or null
- * when the required fields are present.
+ * when the required fields are present. `agent-redirect` mode never opens a
+ * SCRT2 session, so SCRT2 fields are not required there.
  */
 function missingConfigMessage(config: WidgetConfig): string | null {
+  if (config.mode === "agent-redirect") return null;
   const ok = config.scrt2Url && config.orgId && config.esDeveloperName;
   return ok ? null : REQUIRED_MESSAGE_SCRT2;
 }

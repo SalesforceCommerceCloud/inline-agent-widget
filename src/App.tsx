@@ -3,6 +3,7 @@ import { InputBar } from "./components/InputBar";
 import { QuestionPills } from "./components/QuestionPills";
 import { Response } from "./components/Response";
 import { SparkleIcon } from "./components/icons";
+import { AgentRedirectShim } from "./AgentRedirectShim";
 import type { WidgetConfig } from "./provider/types";
 
 export function App({
@@ -14,6 +15,10 @@ export function App({
   hostElement?: HTMLElement;
   conversationIdRef?: { current: string | null };
 }) {
+  if (config.mode === "agent-redirect") {
+    return <AgentRedirectShim config={config} hostElement={hostElement} />;
+  }
+
   return (
     <WidgetProvider config={config} hostElement={hostElement} conversationIdRef={conversationIdRef}>
       <WidgetShell />

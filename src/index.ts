@@ -7,6 +7,7 @@ defineElement();
 export { defineElement, InlineAgentWidgetElement } from "./custom-element";
 export { mount, type MountOptions, type MountHandle } from "./mount";
 export type { WidgetConfig } from "./provider/types";
+export { HANDOFF_EVENT, type HandoffEventDetail } from "./AgentRedirectShim";
 
 // Re-export the vendored SDK surface for consumers who want direct access.
 export {
