@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Main-agent shim probes: when the UMD mounts with mode="main-agent",
+ * Shopper-agent shim probes: when the UMD mounts with mode="shopper-agent",
  * it must (a) render pills + input without opening a SCRT2 session, and
  * (b) emit an `inline-agent-widget:handoff` CustomEvent on the host element
  * every time a pill is clicked or the form is submitted.
@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
-  MainAgentShim,
+  ShopperAgentShim,
   HANDOFF_EVENT,
   type HandoffEventDetail,
-} from "../src/MainAgentShim";
+} from "../src/ShopperAgentShim";
 import { renderInto } from "../src/render";
 import type { WidgetConfig } from "../src/provider/types";
 
@@ -19,7 +19,7 @@ const BASE_CONFIG: WidgetConfig = {
   scrt2Url: "",
   orgId: "",
   esDeveloperName: "",
-  mode: "main-agent",
+  mode: "shopper-agent",
   productName: "Muddier Trucker",
   pdpQuestions: ["Does this fit kids?", "Is it waterproof?"],
 };
@@ -37,11 +37,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("MainAgentShim", () => {
+describe("ShopperAgentShim", () => {
   it("renders pills + input without opening a SCRT2 session", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
 
     expect(screen.getByRole("button", { name: "Does this fit kids?" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Is it waterproof?" })).toBeDefined();
@@ -50,20 +50,20 @@ describe("MainAgentShim", () => {
   });
 
   it("templates the product name into the input placeholder", () => {
-    render(<MainAgentShim config={BASE_CONFIG} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" }) as HTMLTextAreaElement;
     expect(textarea.placeholder).toBe("Ask me anything about Muddier Trucker");
   });
 
   it("falls back to the generic placeholder when no product name is set", () => {
-    render(<MainAgentShim config={{ ...BASE_CONFIG, productName: undefined }} />);
+    render(<ShopperAgentShim config={{ ...BASE_CONFIG, productName: undefined }} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" }) as HTMLTextAreaElement;
     expect(textarea.placeholder).toBe("Ask me anything");
   });
 
   it("honors an explicit placeholder override from config", () => {
     render(
-      <MainAgentShim
+      <ShopperAgentShim
         config={{ ...BASE_CONFIG, placeholder: "What's on your mind?" }}
       />,
     );
@@ -77,7 +77,7 @@ describe("MainAgentShim", () => {
     const handler = vi.fn();
     host.addEventListener(HANDOFF_EVENT, handler as EventListener);
 
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
     fireEvent.click(screen.getByRole("button", { name: "Does this fit kids?" }));
 
     expect(handler).toHaveBeenCalledTimes(1);
@@ -97,7 +97,7 @@ describe("MainAgentShim", () => {
     const handler = vi.fn();
     host.addEventListener(HANDOFF_EVENT, handler as EventListener);
 
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" });
     fireEvent.change(textarea, { target: { value: "Does it ship to Canada?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send question" }));
@@ -114,7 +114,7 @@ describe("MainAgentShim", () => {
     const handler = vi.fn();
     host.addEventListener(HANDOFF_EVENT, handler as EventListener);
 
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" });
     fireEvent.change(textarea, { target: { value: "Hello?" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
@@ -128,7 +128,7 @@ describe("MainAgentShim", () => {
     const handler = vi.fn();
     host.addEventListener(HANDOFF_EVENT, handler as EventListener);
 
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" });
     fireEvent.change(textarea, { target: { value: "Hello?" } });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
@@ -142,7 +142,7 @@ describe("MainAgentShim", () => {
     const handler = vi.fn();
     host.addEventListener(HANDOFF_EVENT, handler as EventListener);
 
-    render(<MainAgentShim config={BASE_CONFIG} hostElement={host} />);
+    render(<ShopperAgentShim config={BASE_CONFIG} hostElement={host} />);
     const textarea = screen.getByRole("textbox", { name: "Ask a question" });
     fireEvent.change(textarea, { target: { value: "   " } });
     fireEvent.keyDown(textarea, { key: "Enter" });
@@ -151,7 +151,7 @@ describe("MainAgentShim", () => {
   });
 
   it("renders no pills section when pdpQuestions is empty", () => {
-    render(<MainAgentShim config={{ ...BASE_CONFIG, pdpQuestions: [] }} />);
+    render(<ShopperAgentShim config={{ ...BASE_CONFIG, pdpQuestions: [] }} />);
     expect(screen.queryByRole("list", { name: "Suggested questions" })).toBeNull();
   });
 
@@ -187,7 +187,7 @@ describe("MainAgentShim", () => {
     }
   });
 
-  it("does NOT fetch anything when mounted via renderInto in main-agent mode", async () => {
+  it("does NOT fetch anything when mounted via renderInto in shopper-agent mode", async () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const shadow = host.attachShadow({ mode: "open" });
@@ -203,9 +203,9 @@ describe("MainAgentShim", () => {
     }
   });
 
-  it("renderInto skips SCRT2 config validation in main-agent mode", async () => {
+  it("renderInto skips SCRT2 config validation in shopper-agent mode", async () => {
     // SCRT2 fields deliberately blank — the old guard would render a
-    // "missing required config" error. With mode="main-agent" the shim
+    // "missing required config" error. With mode="shopper-agent" the shim
     // should render instead.
     const host = document.createElement("div");
     document.body.appendChild(host);
