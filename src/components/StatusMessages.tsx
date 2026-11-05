@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-const MESSAGE_SETS = [
+export const MESSAGE_SETS = [
   [
     "Checking the available product information",
     "Finding what's most relevant to your question",
@@ -23,13 +23,12 @@ const MESSAGE_SETS = [
   ],
 ];
 
-const STEP_DURATION_MS = 1500;
-
-let setCounter = 0;
+export const STEP_DURATION_MS = 1500;
 
 export function StatusMessages() {
+  const counterRef = useRef(0);
   const [index, setIndex] = useState(0);
-  const setRef = useRef(MESSAGE_SETS[setCounter++ % MESSAGE_SETS.length]);
+  const setRef = useRef(MESSAGE_SETS[counterRef.current++ % MESSAGE_SETS.length]);
   const messages = setRef.current;
 
   useEffect(() => {
@@ -39,13 +38,13 @@ export function StatusMessages() {
   }, [index, messages.length]);
 
   return (
-    <div className="status-messages" role="status" aria-live="polite">
+    <div className="status-messages" role="status" aria-live="off" aria-label={messages[index]}>
       <span className="typing" aria-hidden="true">
         <span className="dot" />
         <span className="dot" />
         <span className="dot" />
       </span>
-      <span key={index} className="status-message">
+      <span key={index} className="status-message" aria-hidden="true">
         {messages[index]}
       </span>
     </div>
