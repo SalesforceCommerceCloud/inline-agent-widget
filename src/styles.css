@@ -285,6 +285,31 @@
 }
 
 
+/* ── Status messages (cycling text while waiting for the answer) ── */
+.status-messages {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  color: var(--iaw-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.status-message {
+  animation: iaw-fade-in 0.3s ease-out;
+}
+
+@keyframes iaw-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .error {
   color: var(--iaw-error);
   font-size: 13px;
