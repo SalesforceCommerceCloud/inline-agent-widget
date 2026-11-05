@@ -40,6 +40,11 @@ export function StatusMessages() {
 
   return (
     <div className="status-messages" role="status" aria-live="polite">
+      <span className="typing" aria-hidden="true">
+        <span className="dot" />
+        <span className="dot" />
+        <span className="dot" />
+      </span>
       <span key={index} className="status-message">
         {messages[index]}
       </span>
