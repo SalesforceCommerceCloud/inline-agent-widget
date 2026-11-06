@@ -16,6 +16,7 @@ const OBSERVED = [
   "product-name",
   "enable-logging",
   "persist-session",
+  "pre-warm",
 ] as const;
 
 function readConfig(el: HTMLElement): WidgetConfig {
@@ -32,7 +33,13 @@ function readConfig(el: HTMLElement): WidgetConfig {
     productName: attr("product-name"),
     enableLogging: el.hasAttribute("enable-logging"),
     persistSession: el.hasAttribute("persist-session"),
+    preWarm: parsePreWarm(attr("pre-warm")),
   };
+}
+
+function parsePreWarm(val: string | undefined): WidgetConfig["preWarm"] {
+  if (val === "viewport" || val === "hover") return val;
+  return "off";
 }
 
 /**

@@ -54,6 +54,17 @@ export interface WidgetConfig {
    */
   pdpQuestions?: string[];
 
+  /**
+   * Pre-warm the SCRT2 handshake before the shopper sends a message.
+   *
+   * - `"off"` (default) — today's behaviour; connect on first send.
+   * - `"viewport"` — fire `ensureConnected()` the first time the widget is
+   *   ≥ 50 % visible (IntersectionObserver, threshold 0.5).
+   * - `"hover"` — same as viewport, PLUS a `pointerenter` on the widget
+   *   container (desktop only; mobile falls back to viewport).
+   */
+  preWarm?: "off" | "viewport" | "hover";
+
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;
   /**
@@ -138,5 +149,8 @@ export interface WidgetContextValue {
    * handshake/send failed (an error is dispatched in that case).
    */
   sendMessage: (text: string) => Promise<boolean>;
+  /** Kick off the SCRT2 handshake in the background. Idempotent and
+   *  fire-and-forget — errors are swallowed (the send path retries). */
+  warmUp: () => void;
   config: WidgetConfig;
 }

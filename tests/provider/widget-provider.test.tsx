@@ -578,6 +578,65 @@ describe("WidgetProvider — provider-level regression probes", () => {
     expect(countCalls(isCreateConversation)).toBe(0);
   });
 
+  it("Probe 10 (warmUp): calling warmUp() starts the handshake in the background so a subsequent send reuses the session", async () => {
+    const sse = createMockSSEStream();
+    mockFetch.respondWithSSEStream(sse.stream);
+
+    render(
+      <WidgetProvider config={CONFIG}>
+        <Probe />
+      </WidgetProvider>,
+    );
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    // warmUp fires the handshake (token + SSE + conversation) in the background.
+    await act(async () => {
+      latestCtx!.warmUp();
+      await flushMicrotasks(20);
+    });
+    expect(countCalls(isCreateConversation)).toBe(1);
+
+    // Bot joins on the warm session.
+    await act(async () => {
+      sse.pushEvent("CONVERSATION_MESSAGE", {
+        conversationEntry: {
+          identifier: "welcome-1",
+          sender: { role: "Chatbot" },
+          transcriptedTimestamp: "2026-10-28T20:00:00.000Z",
+          entryPayload: JSON.stringify({
+            abstractMessage: { staticContent: { text: "Welcome!" } },
+          }),
+        },
+      });
+      await flushMicrotasks(10);
+    });
+
+    // Send a message — should NOT create a second conversation.
+    await act(async () => {
+      void latestCtx!.sendMessage("hi");
+      await flushMicrotasks(20);
+    });
+    expect(countCalls(isCreateConversation)).toBe(1);
+    expect(countCalls(isSendMessage)).toBe(1);
+  });
+
+  it("Probe 11 (warmUp no-op): warmUp() without a client does not throw", async () => {
+    const partialConfig: WidgetConfig = { ...CONFIG, orgId: "" };
+    render(
+      <WidgetProvider config={partialConfig}>
+        <Probe />
+      </WidgetProvider>,
+    );
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    // No client was created (missing orgId) — warmUp should silently no-op.
+    expect(() => latestCtx!.warmUp()).not.toThrow();
+  });
+
   it("Probe 3 (P2b): unmount while waitForWelcome is pending fires no welcome_timeout, no retry handshake, no state mutation on the dead provider", async () => {
     const sse = createMockSSEStream();
     mockFetch.respondWithSSEStream(sse.stream);
