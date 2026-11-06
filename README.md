@@ -10,6 +10,11 @@ A bare-minimum, embeddable **inline** widget for **Salesforce Agentforce** (SCRT
 
 > The Salesforce SCRT2 client under `src/sdk/` is a trimmed, self-contained copy carrying only the pieces this widget needs — no separate SDK dependency.
 
+## CDN publishing
+
+See [CDN publishing](docs/cdn-publishing.md) for the WIF setup, versioned UMD
+release workflow, first-publish prerequisites, verification and rollback.
+
 ## Install
 
 ```bash
