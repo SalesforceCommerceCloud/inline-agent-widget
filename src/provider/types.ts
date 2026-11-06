@@ -54,9 +54,8 @@ export interface WidgetConfig {
    */
   pdpQuestions?: string[];
 
-  /** Pre-warm the SCRT2 handshake before the first send. "viewport" fires on
-   *  50% visibility; "off" disables pre-warming (today's behavior). */
-  preWarm?: "off" | "viewport";
+  /** Pre-warm the SCRT2 handshake when the widget is visible on screen. */
+  preWarm?: boolean;
 
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;

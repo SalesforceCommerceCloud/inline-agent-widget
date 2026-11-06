@@ -33,14 +33,10 @@ function readConfig(el: HTMLElement): WidgetConfig {
     productName: attr("product-name"),
     enableLogging: el.hasAttribute("enable-logging"),
     persistSession: el.hasAttribute("persist-session"),
-    preWarm: parsePreWarm(attr("pre-warm")),
+    preWarm: el.hasAttribute("pre-warm"),
   };
 }
 
-function parsePreWarm(val: string | undefined): WidgetConfig["preWarm"] {
-  if (val === "viewport") return val;
-  return "off";
-}
 
 /**
  * <inline-agent-widget> custom element. Renders the chat UI inside an open

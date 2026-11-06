@@ -34,7 +34,7 @@ function WidgetShell() {
     warmUp();
   }, [warmUp]);
 
-  const preWarm = config.preWarm ?? "off";
+  const preWarm = config.preWarm ?? false;
 
   // Reset the once-flag when connection-defining config changes so a new
   // client/manager gets pre-warmed after an attribute swap.
@@ -44,7 +44,7 @@ function WidgetShell() {
 
   // Viewport trigger: IntersectionObserver at 50% threshold.
   useEffect(() => {
-    if (preWarm !== "viewport") return;
+    if (!preWarm) return;
     const el = widgetRef.current;
     if (!el || warmedRef.current) return;
     if (typeof IntersectionObserver === "undefined") return;
