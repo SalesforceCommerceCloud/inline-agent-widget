@@ -36,11 +36,18 @@ function WidgetShell() {
 
   const preWarm = config.preWarm ?? "off";
 
+  // Reset the once-flag when connection-defining config changes so a new
+  // client/manager gets pre-warmed after an attribute swap.
+  useEffect(() => {
+    warmedRef.current = false;
+  }, [config.scrt2Url, config.orgId, config.esDeveloperName]);
+
   // Viewport trigger: IntersectionObserver at 50% threshold.
   useEffect(() => {
     if (preWarm !== "viewport" && preWarm !== "hover") return;
     const el = widgetRef.current;
     if (!el || warmedRef.current) return;
+    if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
