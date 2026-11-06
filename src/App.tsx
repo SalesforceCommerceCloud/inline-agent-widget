@@ -34,7 +34,7 @@ function WidgetShell() {
     warmUp();
   }, [warmUp]);
 
-  const preWarm = config.preWarm ?? true;
+  const preWarm = config.preWarm ?? false;
 
   // Reset the once-flag when connection-defining config changes so a new
   // client/manager gets pre-warmed after an attribute swap.

@@ -78,7 +78,7 @@ export function WidgetProvider({
     esDeveloperName,
     capabilitiesVersion,
     enableLogging,
-    persistSession = true,
+    persistSession,
     productIdParam,
     productIdPattern,
     pdpQuestions,
