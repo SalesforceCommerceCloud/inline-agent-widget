@@ -55,8 +55,8 @@ export interface WidgetConfig {
   pdpQuestions?: string[];
 
   /** Pre-warm the SCRT2 handshake before the first send. "viewport" fires on
-   *  50% visibility; "hover" adds a pointerenter trigger on top of viewport. */
-  preWarm?: "off" | "viewport" | "hover";
+   *  50% visibility; "off" disables pre-warming (today's behavior). */
+  preWarm?: "off" | "viewport";
 
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;

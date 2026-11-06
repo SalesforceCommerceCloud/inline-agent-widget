@@ -44,7 +44,7 @@ function WidgetShell() {
 
   // Viewport trigger: IntersectionObserver at 50% threshold.
   useEffect(() => {
-    if (preWarm !== "viewport" && preWarm !== "hover") return;
+    if (preWarm !== "viewport") return;
     const el = widgetRef.current;
     if (!el || warmedRef.current) return;
     if (typeof IntersectionObserver === "undefined") return;
@@ -59,16 +59,6 @@ function WidgetShell() {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [preWarm, triggerWarmUp]);
-
-  // Hover trigger: pointerenter on the widget container (desktop only).
-  useEffect(() => {
-    if (preWarm !== "hover") return;
-    const el = widgetRef.current;
-    if (!el || warmedRef.current) return;
-    const handler = () => triggerWarmUp();
-    el.addEventListener("pointerenter", handler, { once: true });
-    return () => el.removeEventListener("pointerenter", handler);
   }, [preWarm, triggerWarmUp]);
 
   return (

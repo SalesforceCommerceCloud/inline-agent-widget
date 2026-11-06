@@ -38,7 +38,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
 }
 
 function parsePreWarm(val: string | undefined): WidgetConfig["preWarm"] {
-  if (val === "viewport" || val === "hover") return val;
+  if (val === "viewport") return val;
   return "off";
 }
 
