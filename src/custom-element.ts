@@ -32,8 +32,8 @@ function readConfig(el: HTMLElement): WidgetConfig {
     pdpQuestions: parsePdpQuestions(attr("pdp-questions")),
     productName: attr("product-name"),
     enableLogging: el.hasAttribute("enable-logging"),
-    persistSession: el.hasAttribute("persist-session"),
-    preWarm: el.hasAttribute("pre-warm"),
+    persistSession: el.getAttribute("persist-session") !== "off",
+    preWarm: el.getAttribute("pre-warm") !== "off",
   };
 }
 
