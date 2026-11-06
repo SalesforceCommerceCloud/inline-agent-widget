@@ -54,15 +54,8 @@ export interface WidgetConfig {
    */
   pdpQuestions?: string[];
 
-  /**
-   * Pre-warm the SCRT2 handshake before the shopper sends a message.
-   *
-   * - `"off"` (default) — today's behaviour; connect on first send.
-   * - `"viewport"` — fire `ensureConnected()` the first time the widget is
-   *   ≥ 50 % visible (IntersectionObserver, threshold 0.5).
-   * - `"hover"` — same as viewport, PLUS a `pointerenter` on the widget
-   *   container (desktop only; mobile falls back to viewport).
-   */
+  /** Pre-warm the SCRT2 handshake before the first send. "viewport" fires on
+   *  50% visibility; "hover" adds a pointerenter trigger on top of viewport. */
   preWarm?: "off" | "viewport" | "hover";
 
   /** Enable SDK debug logging in the console. */
