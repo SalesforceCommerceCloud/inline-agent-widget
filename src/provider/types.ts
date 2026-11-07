@@ -66,6 +66,9 @@ export interface WidgetConfig {
    */
   pdpQuestions?: string[];
 
+  /** Pre-warm the SCRT2 handshake when the widget is visible on screen. */
+  preWarm?: boolean;
+
   /** Enable SDK debug logging in the console. */
   enableLogging?: boolean;
   /**
@@ -150,5 +153,8 @@ export interface WidgetContextValue {
    * handshake/send failed (an error is dispatched in that case).
    */
   sendMessage: (text: string) => Promise<boolean>;
+  /** Kick off the SCRT2 handshake in the background. Idempotent and
+   *  fire-and-forget — errors are swallowed (the send path retries). */
+  warmUp: () => void;
   config: WidgetConfig;
 }

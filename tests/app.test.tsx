@@ -31,6 +31,70 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("WidgetShell pre-warm (IntersectionObserver)", () => {
+  let observeCb: (entries: Array<{ isIntersecting: boolean }>) => void;
+  let mockObserve: ReturnType<typeof vi.fn>;
+  let mockDisconnect: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockObserve = vi.fn();
+    mockDisconnect = vi.fn();
+    globalThis.IntersectionObserver = class {
+      constructor(cb: IntersectionObserverCallback) {
+        observeCb = cb as unknown as typeof observeCb;
+      }
+      observe = mockObserve;
+      disconnect = mockDisconnect;
+      unobserve = vi.fn();
+      readonly root = null;
+      readonly rootMargin = "";
+      readonly thresholds = [] as number[];
+      takeRecords = vi.fn();
+    } as unknown as typeof IntersectionObserver;
+  });
+
+  it("sets up IntersectionObserver when preWarm is true and fires warmUp on intersection", async () => {
+    render(<App config={{ ...SCRT2_CONFIG, preWarm: true }} />);
+    await act(async () => {});
+
+    expect(mockObserve).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      observeCb([{ isIntersecting: true }]);
+    });
+
+    expect(mockDisconnect).toHaveBeenCalled();
+  });
+
+  it("does not set up IntersectionObserver when preWarm is false", async () => {
+    render(<App config={{ ...SCRT2_CONFIG, preWarm: false }} />);
+    await act(async () => {});
+
+    expect(mockObserve).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-intersecting entries", async () => {
+    render(<App config={{ ...SCRT2_CONFIG, preWarm: true }} />);
+    await act(async () => {});
+
+    await act(async () => {
+      observeCb([{ isIntersecting: false }]);
+    });
+
+    expect(mockDisconnect).not.toHaveBeenCalled();
+  });
+
+  it("fires warmUp only once even if observer triggers twice", async () => {
+    render(<App config={{ ...SCRT2_CONFIG, preWarm: true }} />);
+    await act(async () => {});
+
+    await act(async () => {
+      observeCb([{ isIntersecting: true }]);
+    });
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("App mode routing", () => {
   it("renders WidgetShell for mode='inline' (default)", async () => {
     const { container } = render(<App config={SCRT2_CONFIG} />);
