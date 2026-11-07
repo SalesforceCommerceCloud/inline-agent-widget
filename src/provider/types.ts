@@ -19,6 +19,18 @@ export interface WidgetConfig {
   placeholder?: string;
 
   /**
+   * PDP interaction mode. `inline` (default) runs the widget's own SCRT2
+   * session and answers inside the widget. `shopper-agent` paints a
+   * non-conversational shim (pills + input) and dispatches an
+   * `inline-agent-widget:handoff` CustomEvent on the host element when the
+   * shopper clicks a pill or submits — SCRT2 is never contacted. The host
+   * storefront listens for the event and opens its main Shopper Agent drawer.
+   * `hybrid` is reserved for future per-pill routing; for now it falls back
+   * to `inline`.
+   */
+  mode?: "inline" | "shopper-agent" | "hybrid";
+
+  /**
    * Current PDP product name, used to template the InputBar placeholder as
    * `"Ask me anything about <productName>"`. When unset, the InputBar falls
    * back to `placeholder` (or the generic default). Sourced from SCAPI's
