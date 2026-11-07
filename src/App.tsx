@@ -5,6 +5,7 @@ import { QuestionPills } from "./components/QuestionPills";
 import { Response } from "./components/Response";
 import { SparkleIcon } from "./components/icons";
 import { useWidget } from "./provider/context";
+import { ShopperAgentShim } from "./ShopperAgentShim";
 import type { WidgetConfig } from "./provider/types";
 
 export function App({
@@ -16,6 +17,10 @@ export function App({
   hostElement?: HTMLElement;
   conversationIdRef?: { current: string | null };
 }) {
+  if (config.mode === "shopper-agent") {
+    return <ShopperAgentShim config={config} hostElement={hostElement} />;
+  }
+
   return (
     <WidgetProvider config={config} hostElement={hostElement} conversationIdRef={conversationIdRef}>
       <WidgetShell />
