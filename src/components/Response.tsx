@@ -1,22 +1,19 @@
 import { useWidget } from "../provider/context";
 import { Markdown } from "./Markdown";
+import { StatusMessages } from "./StatusMessages";
 
 export function Response() {
   const { state } = useWidget();
 
   const showStreaming = state.streamingText.length > 0;
+  const showStatus = state.agentTyping && !showStreaming && state.answer === null;
   const hasActivity =
-    state.error || showStreaming || state.answer !== null || state.lastQuestion !== null;
+    state.error || showStreaming || state.answer !== null || state.lastQuestion !== null || showStatus;
 
   if (!hasActivity) return null;
 
   return (
     <div className="slot">
-      {/* Right-aligned chat-bubble echo of the shopper's question. Rendered
-          for ALL sends (pill or typed) — the bubble is the north-star
-          acknowledgement surface and replaces pill highlighting. See the
-          Shiseido-Sandbox northstar design: dark pill-shaped bubble above
-          the answer card. */}
       {state.lastQuestion !== null && (
         <div className="user-bubble-row">
           <div className="user-bubble">{state.lastQuestion}</div>
@@ -29,13 +26,19 @@ export function Response() {
         </div>
       )}
 
+      {showStatus && (
+        <div className="answer">
+          <StatusMessages />
+        </div>
+      )}
+
       {showStreaming && (
         <div className="answer" role="log" aria-live="polite" aria-busy="true">
           <Markdown text={state.streamingText} />
         </div>
       )}
 
-      {!showStreaming && !state.error && state.answer !== null && (
+      {!showStreaming && !state.error && !showStatus && state.answer !== null && (
         <div className="answer" role="log" aria-live="polite">
           <Markdown text={state.answer} />
         </div>

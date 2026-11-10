@@ -16,7 +16,15 @@ const OBSERVED = [
   "product-name",
   "enable-logging",
   "persist-session",
+  "mode",
 ] as const;
+
+function readMode(value: string | undefined): WidgetConfig["mode"] {
+  if (value === "shopper-agent" || value === "hybrid" || value === "inline") {
+    return value;
+  }
+  return undefined;
+}
 
 function readConfig(el: HTMLElement): WidgetConfig {
   const attr = (name: string) => el.getAttribute(name)?.trim() || undefined;
@@ -32,6 +40,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
     productName: attr("product-name"),
     enableLogging: el.hasAttribute("enable-logging"),
     persistSession: el.hasAttribute("persist-session"),
+    mode: readMode(attr("mode")),
   };
 }
 
