@@ -165,7 +165,7 @@ function openAndSendToShopperAgent(text: string): boolean {
   if (typeof window === "undefined") return false;
 
   try {
-    const w = window as AnyRecord;
+    const w = window as unknown as AnyRecord;
 
     // Commerce Client (Cimulate widget) — open panel + inject question
     const cimulate = w.CimulateMessaging as AnyRecord | undefined;
@@ -237,32 +237,36 @@ export function QuestionPills() {
   if (pills.length === 0) return null;
 
   const disabled = state.agentTyping || state.streamingText.length > 0;
+  const isHybrid = config.mode === "hybrid";
 
   const hostElement =
-    typeof document !== "undefined"
-      ? document.querySelector("inline-agent-widget")
+    isHybrid && typeof document !== "undefined"
+      ? document.querySelector<HTMLElement>("inline-agent-widget")
       : null;
 
   return (
     <ul className="pills" aria-label="Suggested questions">
-      {pills.map((pill) => (
-        <li key={pill.text} className="pills-item">
-          <button
-            className={`pill${pill.answerable_by === "main_agent" ? " pill--main-agent" : ""}`}
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              if (pill.answerable_by === "main_agent") {
-                emitMainAgentRedirect(pill.text, hostElement);
-              } else {
-                void sendMessage(pill.text);
-              }
-            }}
-          >
-            {pill.text}
-          </button>
-        </li>
-      ))}
+      {pills.map((pill) => {
+        const isMainAgent = isHybrid && pill.answerable_by === "main_agent";
+        return (
+          <li key={pill.text} className="pills-item">
+            <button
+              className={`pill${isMainAgent ? " pill--main-agent" : ""}`}
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                if (isMainAgent) {
+                  emitMainAgentRedirect(pill.text, hostElement);
+                } else {
+                  void sendMessage(pill.text);
+                }
+              }}
+            >
+              {pill.text}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

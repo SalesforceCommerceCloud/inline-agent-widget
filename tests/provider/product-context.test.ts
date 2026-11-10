@@ -111,9 +111,22 @@ describe("buildPdpInlineContext", () => {
         version: "1.0.0",
         page_context_type: "pdp_inline",
         page_context_data: { id: "1050633A6D" },
-        suggestion_routing: true,
       }),
     });
+  });
+
+  it("includes suggestion_routing when explicitly enabled", () => {
+    const context = buildPdpInlineContext("1050633A6D", { suggestionRouting: true });
+    const val = context[0].value as { textValue: string };
+    const parsed = JSON.parse(val.textValue);
+    expect(parsed.suggestion_routing).toBe(true);
+  });
+
+  it("omits suggestion_routing when not enabled", () => {
+    const context = buildPdpInlineContext("1050633A6D");
+    const val = context[0].value as { textValue: string };
+    const parsed = JSON.parse(val.textValue);
+    expect(parsed.suggestion_routing).toBeUndefined();
   });
 
   it("preserves special characters in product ids", () => {
