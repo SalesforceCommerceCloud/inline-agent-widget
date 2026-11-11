@@ -104,15 +104,15 @@ export type ConnectionStatus =
  *
  * When the BYON response includes an `items` array with `answerable_by`
  * attributes, each suggestion carries the routing target:
- * - `"inline_pdp"` — answerable by the PDP inline widget
- * - `"main_agent"` — needs the full shopping assistant (catalog search, cart, etc.)
+ * - `"inline"` — answerable by the PDP inline widget
+ * - `"shopper-agent"` — needs the full shopping assistant (catalog search, cart, etc.)
  *
  * When no `answerable_by` is present (non-PDP flows, or older agent versions),
  * the field is `undefined` and the chip is handled inline as before.
  */
 export interface SuggestionItem {
   text: string;
-  answerable_by?: "inline_pdp" | "main_agent";
+  answerable_by?: "inline" | "shopper-agent";
 }
 
 export interface WidgetState {

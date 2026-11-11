@@ -203,7 +203,7 @@ function openAndSendToShopperAgent(text: string): boolean {
 }
 
 /**
- * Hand off a `main_agent` question to the storefront's full shopper-agent chat.
+ * Hand off a `shopper-agent` question to the storefront's full shopper-agent chat.
  * Opens the chat panel and sends the question where possible (MIAW), then
  * emits a `iaw:main-agent-redirect` CustomEvent so the host page can also
  * react (e.g. forward to Cimulate when its send API is available).
@@ -247,7 +247,7 @@ export function QuestionPills() {
   return (
     <ul className="pills" aria-label="Suggested questions">
       {pills.map((pill) => {
-        const isMainAgent = isHybrid && pill.answerable_by === "main_agent";
+        const isMainAgent = isHybrid && pill.answerable_by === "shopper-agent";
         return (
           <li key={pill.text} className="pills-item">
             <button

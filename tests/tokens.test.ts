@@ -232,16 +232,16 @@ describe("extractMessageSuggestions", () => {
           data: {
             display_text: ["Is it true to size?", "Best shoe for trails?"],
             items: [
-              { text: "Is it true to size?", answerable_by: "inline_pdp" },
-              { text: "Best shoe for trails?", answerable_by: "main_agent" },
+              { text: "Is it true to size?", answerable_by: "inline" },
+              { text: "Best shoe for trails?", answerable_by: "shopper-agent" },
             ],
           },
         },
       ],
     });
     expect(extractMessageSuggestions(envelope)).toEqual([
-      { text: "Is it true to size?", answerable_by: "inline_pdp" },
-      { text: "Best shoe for trails?", answerable_by: "main_agent" },
+      { text: "Is it true to size?", answerable_by: "inline" },
+      { text: "Best shoe for trails?", answerable_by: "shopper-agent" },
     ]);
   });
 
@@ -274,9 +274,9 @@ describe("extractMessageSuggestions", () => {
           index: 0,
           data: {
             items: [
-              { text: "Care instructions?", answerable_by: "inline_pdp" },
+              { text: "Care instructions?", answerable_by: "inline" },
               { text: "No metadata" },
-              { text: "Show me similar", answerable_by: "main_agent" },
+              { text: "Show me similar", answerable_by: "shopper-agent" },
             ],
           },
         },
@@ -284,9 +284,9 @@ describe("extractMessageSuggestions", () => {
     });
     const result = extractMessageSuggestions(envelope);
     expect(result).toEqual([
-      { text: "Care instructions?", answerable_by: "inline_pdp" },
+      { text: "Care instructions?", answerable_by: "inline" },
       { text: "No metadata" },
-      { text: "Show me similar", answerable_by: "main_agent" },
+      { text: "Show me similar", answerable_by: "shopper-agent" },
     ]);
   });
 
@@ -298,7 +298,7 @@ describe("extractMessageSuggestions", () => {
           index: 0,
           data: {
             items: [
-              { text: "Valid", answerable_by: "inline_pdp" },
+              { text: "Valid", answerable_by: "inline" },
               { text: "Bad value", answerable_by: "unknown_target" },
             ],
           },
@@ -306,7 +306,7 @@ describe("extractMessageSuggestions", () => {
       ],
     });
     const result = extractMessageSuggestions(envelope);
-    expect(result[0].answerable_by).toBe("inline_pdp");
+    expect(result[0].answerable_by).toBe("inline");
     expect(result[1].answerable_by).toBeUndefined();
   });
 
@@ -318,10 +318,10 @@ describe("extractMessageSuggestions", () => {
           index: 0,
           data: {
             items: [
-              { text: "Good", answerable_by: "inline_pdp" },
+              { text: "Good", answerable_by: "inline" },
               { text: "" },
               { text: "  " },
-              { answerable_by: "main_agent" },
+              { answerable_by: "shopper-agent" },
               { text: "Also good" },
             ],
           },
@@ -329,7 +329,7 @@ describe("extractMessageSuggestions", () => {
       ],
     });
     expect(extractMessageSuggestions(envelope)).toEqual([
-      { text: "Good", answerable_by: "inline_pdp" },
+      { text: "Good", answerable_by: "inline" },
       { text: "Also good" },
     ]);
   });
