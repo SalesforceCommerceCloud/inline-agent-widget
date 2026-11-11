@@ -1,0 +1,152 @@
+name: Publish widget to CDN
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite*.config.*'
+      - 'tsconfig*.json'
+      - 'scripts/cdn-publish.mjs'
+      - 'tests/cdn-publish.test.mjs'
+      - '.github/workflows/publish-cdn.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite*.config.*'
+      - 'tsconfig*.json'
+      - 'scripts/cdn-publish.mjs'
+      - 'tests/cdn-publish.test.mjs'
+      - '.github/workflows/publish-cdn.yml'
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Verify the current version on the CDN without uploading
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate CDN release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      sha256: ${{ steps.release.outputs.sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test publisher
+        run: >-
+          node --test --experimental-test-coverage
+          --test-coverage-include=scripts/cdn-publish.mjs
+          --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=90
+          tests/cdn-publish.test.mjs
+
+      - name: Test widget
+        run: npm test
+
+      - name: Build UMD
+        run: npm run build:umd
+
+      - name: Validate version and artifact
+        id: release
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/cdn-publish.mjs prepare
+
+      - name: Store validated UMD
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cdn-umd
+          path: dist/inline-agent-widget.umd.js
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish versioned UMD
+    needs: validate
+    if: >-
+      github.repository == 'SalesforceCommerceCloud/inline-agent-widget' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: inline-agent-widget-cdn
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+      EXPECTED_SHA256: ${{ needs.validate.outputs.sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Download validated UMD
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: cdn-umd
+          path: dist
+
+      - name: Verify artifact integrity
+        run: node scripts/cdn-publish.mjs prepare
+
+      - name: Check WIF configuration
+        if: ${{ !inputs.verify_only }}
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: node scripts/cdn-publish.mjs check-auth
+
+      - name: Authenticate to GCP
+        if: ${{ !inputs.verify_only }}
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 600s
+          access_token_scopes: https://www.googleapis.com/auth/devstorage.read_write
+          create_credentials_file: false
+          export_environment_variables: false
+
+      - name: Upload new version
+        if: ${{ !inputs.verify_only }}
+        env:
+          GCP_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: node scripts/cdn-publish.mjs publish
+
+      - name: Verify public CDN
+        run: node scripts/cdn-publish.mjs verify-cdn
