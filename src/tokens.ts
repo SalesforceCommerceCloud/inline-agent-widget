@@ -148,8 +148,11 @@ function collectSuggestions(value: unknown): SuggestionItem[] {
         .filter((item) => typeof item.text === "string" && item.text.trim().length > 0)
         .map((item) => {
           const result: SuggestionItem = { text: (item.text as string).trim() };
-          if (item.answerable_by === "inline" || item.answerable_by === "shopper-agent") {
-            result.answerable_by = item.answerable_by;
+          const ab = item.answerable_by;
+          if (ab === "inline" || ab === "inline_pdp") {
+            result.answerable_by = "inline";
+          } else if (ab === "shopper-agent" || ab === "main_agent") {
+            result.answerable_by = "shopper-agent";
           }
           return result;
         });
