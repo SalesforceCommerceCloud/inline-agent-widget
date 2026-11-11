@@ -10,16 +10,31 @@ A bare-minimum, embeddable **inline** widget for **Salesforce Agentforce** (SCRT
 
 > The Salesforce SCRT2 client under `src/sdk/` is a trimmed, self-contained copy carrying only the pieces this widget needs — no separate SDK dependency.
 
-## CDN publishing
+## Published CDN bundle
 
-See [CDN publishing](docs/cdn-publishing.md) for the WIF setup, versioned UMD
-release workflow, first-publish prerequisites, verification and rollback.
+The first published UMD release is **0.1.0**, available from the Cimulate CDN:
 
-## Install
-
-```bash
-npm install inline-agent-widget
+```text
+https://cdn.search.cimulate.ai/inline-agent-widget/0.1.0/inline-agent-widget.umd.js
 ```
+
+Use this versioned URL for script-tag integrations in **SFRA, PWA Kit and SF Next**.
+React is included in the UMD, so these consumers need no npm installation and no
+copy of `inline-agent-widget.umd.js` in their cartridge or Managed Runtime bundle.
+The storefront still supplies its loader, configuration, product context and any
+Shopper Agent handoff adapter.
+
+The [first publishing run](https://github.com/SalesforceCommerceCloud/inline-agent-widget/actions/runs/42988414724)
+validated the public CDN bytes against the built artifact. See
+[CDN publishing](docs/cdn-publishing.md) for WIF/IAM setup, release validation,
+manual verification and recovery.
+
+## npm / ESM integration
+
+The CDN workflow publishes only the UMD to GCS; it does **not** publish an npm
+package. The ESM and `mount()` examples below describe the package integration
+when the package is available to your build. For a script-tag integration, use
+the published CDN bundle above.
 
 React 18 is a **peer dependency** for the ESM/npm path (so your app dedupes to a single React). The UMD/CDN bundle has React bundled in and needs no peer.
 
@@ -30,7 +45,7 @@ React 18 is a **peer dependency** for the ESM/npm path (so your app dedupes to a
 The UMD bundle registers the `<inline-agent-widget>` custom element automatically. Just drop the tag on the page.
 
 ```html
-<script src="https://unpkg.com/inline-agent-widget@0.1.0"></script>
+<script defer src="https://cdn.search.cimulate.ai/inline-agent-widget/0.1.0/inline-agent-widget.umd.js"></script>
 
 <inline-agent-widget
   scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
@@ -39,7 +54,32 @@ The UMD bundle registers the `<inline-agent-widget>` custom element automaticall
 ></inline-agent-widget>
 ```
 
-Pin the version (`@0.1.0`) so a future release can't silently change behavior on your page; drop the `@version` to always float to latest. Either way this resolves — via the `unpkg` field in `package.json` — to the minified UMD build (`dist/inline-agent-widget.umd.js`).
+Keep the version in the URL. Published objects cannot be overwritten, and this
+pipeline provides no mutable `/latest/` alias. To upgrade or roll back, select
+another published versioned URL and apply the storefront's normal configuration
+and deployment process. Do not load both a bundled copy and the CDN copy on the
+same page.
+
+Allow `https://cdn.search.cimulate.ai` in the storefront's `script-src` CSP, while
+retaining the SCRT2 connection and other directives required by your integration.
+The script URL alone does not configure the agent or implement drawer handoff.
+
+### Storefront loaders
+
+All three storefronts can load the same UMD URL. Their configuration and loader
+changes are maintained in the respective storefront repositories:
+
+| Storefront | Where the script URL is configured |
+| --- | --- |
+| SF Next | `commerce.embeddedAgent.scriptSourceUrl`, supplied inside the `PUBLIC__app__commerce__embeddedAgent` JSON environment variable. The existing loader supports the published CDN URL. |
+| PWA Kit | The embedded widget's server-rendered script and client-navigation loader must both use the CDN URL. Existing bundled-UMD integrations need a loader update first. |
+| SFRA | The inline widget ISML template must use the CDN URL instead of `URLUtils.staticURL(...)`. Existing cartridge integrations need a loader update first. |
+
+`scriptSourceUrl` is a **storefront loader setting**, not an attribute understood
+by `<inline-agent-widget>`. Changing an arbitrary JSON field cannot switch a
+loader that still hard-codes a bundled asset. CDN publication and storefront
+adoption are separate steps. The floating **Cimulate Widget** has its own bundle
+and configuration; this URL is for the inline widget only.
 
 ### 2. ESM / bundler
 
@@ -181,6 +221,41 @@ npm test           # vitest run (vendored SDK smoke tests + token parsing)
 ```
 
 Point `demo/index.html` at a real SCRT2 instance/org/ES-name to exercise the full flow. The committed values are placeholders — never commit a real org.
+
+## Publishing a new CDN version
+
+1. Make the widget changes and choose a new semantic version. For a patch release:
+
+   ```bash
+   npm version patch --no-git-tag-version --ignore-scripts
+   npm ci
+   npm test
+   npm run build:umd
+   node scripts/cdn-publish.mjs prepare
+   ```
+
+   Commit both `package.json` and `package-lock.json` version changes with the
+   source changes. Build the release from the source you intend to publish.
+2. Open a PR to `main`. The CDN workflow validates release-input changes without
+   cloud credentials. After merge, it downloads the validated UMD, authenticates
+   through GitHub OIDC/WIF and uploads the versioned object with create-only
+   permissions. No service-account JSON key is required.
+3. Confirm **Publish widget to CDN** succeeds. Its summary provides the public
+   URL, source commit, size and SHA-256 after checking the CDN response bytes and
+   JavaScript Content-Type. A successful local build alone is not a publication.
+4. Update each storefront's pinned URL and verify in the browser Network panel
+   that the expected CDN script loads. Test the configured widget mode, including
+   the host's handoff adapter when using `shopper-agent` mode.
+
+Only release-input changes trigger automatic CDN publication. A README-only
+change does not publish another bundle or need a version bump. To recheck the
+current main version without uploading, use **Actions → Publish widget to CDN →
+Run workflow → main**, with **verify_only** enabled. If main has moved beyond the
+release, use the original run's artifact and checksum instead.
+
+An HTTP 412 during upload means the version already exists. Do not overwrite it
+or treat that response as proof that the existing bytes match. Follow the
+[recovery instructions](docs/cdn-publishing.md#failures-retries-and-rollback).
 
 ## License
 
