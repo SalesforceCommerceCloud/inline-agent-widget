@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { AgentforceClient } from "../sdk";
 import { AgentforceApiError, AgentforceNetworkError } from "../sdk/errors";
 import { ConnectionManager } from "./connection-manager";
@@ -100,17 +100,27 @@ export function WidgetProvider({
     productContextRef.current = { productIdParam, productIdPattern };
   }, [productIdParam, productIdPattern]);
 
+  // Reactive product id — kept in sync with the URL so components (e.g.
+  // QuestionPills) can read it without re-resolving.
+  const [currentProductId, setCurrentProductId] = useState<string | null>(() =>
+    typeof window !== "undefined"
+      ? resolveProductId(window.location, { productIdParam, productIdPattern })
+      : null,
+  );
+
   // Clear stale question/answer when the user navigates between PDPs via SPA
   // routing. SPA frameworks use pushState/replaceState (no popstate event) and
   // the browser fires popstate on back/forward, so we listen for all three.
   useEffect(() => {
     if (typeof window === "undefined") return;
     let lastProductId = resolveProductId(window.location, { productIdParam, productIdPattern });
+    setCurrentProductId(lastProductId);
 
     const checkProductChange = () => {
       const currentId = resolveProductId(window.location, { productIdParam, productIdPattern });
       if (currentId !== lastProductId) {
         lastProductId = currentId;
+        setCurrentProductId(currentId);
         // Drop the previous PDP's echo anchor + buffered pre-echo entries so a
         // late-arriving Chatbot message from PDP A can't classify against PDP A's
         // cutoff and render as an answer on PDP B.
@@ -444,8 +454,8 @@ export function WidgetProvider({
   }, [enableLogging, orgId, esDeveloperName]);
 
   const value = useMemo(
-    () => ({ state, dispatch, sendMessage, warmUp, config }),
-    [state, sendMessage, warmUp, config],
+    () => ({ state, dispatch, sendMessage, warmUp, config, productId: currentProductId }),
+    [state, sendMessage, warmUp, config, currentProductId],
   );
 
   return <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>;

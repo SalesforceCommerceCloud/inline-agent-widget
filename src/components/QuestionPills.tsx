@@ -161,7 +161,23 @@ function sendToCimulateInput(text: string): void {
   setTimeout(tryFind, INPUT_POLL_INTERVAL_MS);
 }
 
-function openAndSendToShopperAgent(text: string): boolean {
+function setCimulatePageContext(productId: string): void {
+  try {
+    const w = window as unknown as AnyRecord;
+    const cimulate = w.CimulateMessaging as AnyRecord | undefined;
+    const pageContext = (cimulate?.eventHandlers as AnyRecord)?.pageContext as AnyRecord | undefined;
+    if (typeof pageContext?.set === "function") {
+      (pageContext.set as (ctx: { type: string; id: string }) => void)({
+        type: "pdp",
+        id: productId,
+      });
+    }
+  } catch {
+    // pageContext API not available — continue without it.
+  }
+}
+
+function openAndSendToShopperAgent(text: string, productId?: string | null): boolean {
   if (typeof window === "undefined") return false;
 
   try {
@@ -172,6 +188,7 @@ function openAndSendToShopperAgent(text: string): boolean {
     const components = (cimulate?.eventHandlers as AnyRecord)
       ?.components as AnyRecord | undefined;
     if (typeof components?.toggleWidgetOpen === "function") {
+      if (productId) setCimulatePageContext(productId);
       (components.toggleWidgetOpen as (show: boolean) => void)(true);
       sendToCimulateInput(text);
       return true;
@@ -208,13 +225,17 @@ function openAndSendToShopperAgent(text: string): boolean {
  * emits a `iaw:main-agent-redirect` CustomEvent so the host page can also
  * react (e.g. forward to Cimulate when its send API is available).
  */
-function emitMainAgentRedirect(text: string, hostElement?: HTMLElement | null) {
-  openAndSendToShopperAgent(text);
+function emitMainAgentRedirect(
+  text: string,
+  hostElement?: HTMLElement | null,
+  productId?: string | null,
+) {
+  openAndSendToShopperAgent(text, productId);
 
   const target = hostElement ?? document;
   target.dispatchEvent(
     new CustomEvent("iaw:main-agent-redirect", {
-      detail: { question: text },
+      detail: { question: text, ...(productId && { productId }) },
       bubbles: true,
       composed: true,
     }),
@@ -223,7 +244,7 @@ function emitMainAgentRedirect(text: string, hostElement?: HTMLElement | null) {
 
 /** Show follow-up suggestions after a question, or PDP pills before any question is asked. */
 export function QuestionPills() {
-  const { state, sendMessage, config } = useWidget();
+  const { state, sendMessage, config, productId } = useWidget();
 
   const asked = new Set(state.askedQuestions);
   const hasAsked = state.askedQuestions.length > 0;
@@ -256,7 +277,7 @@ export function QuestionPills() {
               disabled={disabled}
               onClick={() => {
                 if (isMainAgent) {
-                  emitMainAgentRedirect(pill.text, hostElement);
+                  emitMainAgentRedirect(pill.text, hostElement, productId);
                 } else {
                   void sendMessage(pill.text);
                 }
