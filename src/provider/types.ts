@@ -173,4 +173,6 @@ export interface WidgetContextValue {
    *  fire-and-forget — errors are swallowed (the send path retries). */
   warmUp: () => void;
   config: WidgetConfig;
+  /** Current PDP product id resolved from the URL. Null off-PDP. */
+  productId: string | null;
 }
