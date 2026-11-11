@@ -253,6 +253,20 @@ current main version without uploading, use **Actions → Publish widget to CDN 
 Run workflow → main**, with **verify_only** enabled. If main has moved beyond the
 release, use the original run's artifact and checksum instead.
 
+### What release validation enforces
+
+For release-input PRs and pushes, the workflow requires a semantic version
+**different from the baseline** in `package.json`, plus matching `version`
+entries at the top level and in `packages[""]` of `package-lock.json`. It does not
+automatically increment the version or check that it is greater than the old one.
+The initial workflow introduction and manual dispatches do not require a baseline
+version change; the create-only upload guard still applies.
+
+There is currently no changelog validation. A changelog heading does not select
+the published version. Configure `Validate CDN release` as a required check in
+branch protection or a ruleset to make passing validation a prerequisite for
+merging; defining a GitHub Actions job alone does not enforce that merge rule.
+
 An HTTP 412 during upload means the version already exists. Do not overwrite it
 or treat that response as proof that the existing bytes match. Follow the
 [recovery instructions](docs/cdn-publishing.md#failures-retries-and-rollback).
