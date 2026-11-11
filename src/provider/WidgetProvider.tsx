@@ -340,6 +340,14 @@ export function WidgetProvider({
   useEffect(() => { onHandshakeStartRef.current = onHandshakeStart; }, [onHandshakeStart]);
   useEffect(() => { onConversationCreatedRef.current = onConversationCreated; }, [onConversationCreated]);
 
+  const warmUp = useCallback(() => {
+    const manager = managerRef.current;
+    if (!manager) return;
+    manager.connect().catch(() => {
+      // Swallowed — the send path retries on its own.
+    });
+  }, []);
+
   const sendMessage = useCallback(async (text: string): Promise<boolean> => {
     const client = clientRef.current;
     const manager = managerRef.current;
@@ -436,8 +444,8 @@ export function WidgetProvider({
   }, [enableLogging, orgId, esDeveloperName]);
 
   const value = useMemo(
-    () => ({ state, dispatch, sendMessage, config }),
-    [state, sendMessage, config],
+    () => ({ state, dispatch, sendMessage, warmUp, config }),
+    [state, sendMessage, warmUp, config],
   );
 
   return <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>;
