@@ -22,6 +22,7 @@ export interface CommerceAgentContext {
   version: string;
   page_context_type: string;
   page_context_data: { id: string };
+  suggestion_routing?: boolean;
 }
 
 /**
@@ -105,11 +106,15 @@ export function resolveProductId(
 }
 
 /** Build the single commerce_agent_context variable expected by the inline PDP agent. */
-export function buildPdpInlineContext(productId: string): SessionContextVariable[] {
+export function buildPdpInlineContext(
+  productId: string,
+  options?: { suggestionRouting?: boolean },
+): SessionContextVariable[] {
   const context: CommerceAgentContext = {
     version: COMMERCE_AGENT_CONTEXT_VERSION,
     page_context_type: "pdp_inline",
     page_context_data: { id: productId },
+    ...(options?.suggestionRouting && { suggestion_routing: true }),
   };
 
   return [

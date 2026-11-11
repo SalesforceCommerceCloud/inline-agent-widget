@@ -115,6 +115,20 @@ describe("buildPdpInlineContext", () => {
     });
   });
 
+  it("includes suggestion_routing when explicitly enabled", () => {
+    const context = buildPdpInlineContext("1050633A6D", { suggestionRouting: true });
+    const val = context[0].value as { textValue: string };
+    const parsed = JSON.parse(val.textValue);
+    expect(parsed.suggestion_routing).toBe(true);
+  });
+
+  it("omits suggestion_routing when not enabled", () => {
+    const context = buildPdpInlineContext("1050633A6D");
+    const val = context[0].value as { textValue: string };
+    const parsed = JSON.parse(val.textValue);
+    expect(parsed.suggestion_routing).toBeUndefined();
+  });
+
   it("preserves special characters in product ids", () => {
     const productId = 'sku"\\\nnext';
     const context = buildPdpInlineContext(productId);

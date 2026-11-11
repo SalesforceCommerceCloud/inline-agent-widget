@@ -386,7 +386,11 @@ export function WidgetProvider({
       if (clientRef.current !== client) throw new Error("unmounted");
       await client.sendMessage(
         trimmed,
-        productId ? buildPdpInlineContext(productId) : undefined,
+        productId
+          ? buildPdpInlineContext(productId, {
+              suggestionRouting: config.mode === "hybrid",
+            })
+          : undefined,
       );
     };
 
