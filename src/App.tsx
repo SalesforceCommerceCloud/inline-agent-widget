@@ -55,7 +55,9 @@ function WidgetShell() {
     if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
+        // Guard ratio directly: `threshold` only controls which crossings fire,
+        // not the initial entry — it can be `isIntersecting:true` with ratio < 0.5.
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
           triggerWarmUp();
           observer.disconnect();
         }

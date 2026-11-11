@@ -32,7 +32,8 @@ afterEach(() => {
 });
 
 describe("WidgetShell pre-warm (IntersectionObserver)", () => {
-  let observeCb: (entries: Array<{ isIntersecting: boolean }>) => void;
+  type Entry = { isIntersecting: boolean; intersectionRatio: number };
+  let observeCb: (entries: Array<Entry>) => void;
   let mockObserve: ReturnType<typeof vi.fn>;
   let mockDisconnect: ReturnType<typeof vi.fn>;
 
@@ -53,14 +54,14 @@ describe("WidgetShell pre-warm (IntersectionObserver)", () => {
     } as unknown as typeof IntersectionObserver;
   });
 
-  it("sets up IntersectionObserver when preWarm is true and fires warmUp on intersection", async () => {
+  it("sets up IntersectionObserver when preWarm is true and fires warmUp on intersection at >=50%", async () => {
     render(<App config={{ ...SCRT2_CONFIG, preWarm: true }} />);
     await act(async () => {});
 
     expect(mockObserve).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      observeCb([{ isIntersecting: true }]);
+      observeCb([{ isIntersecting: true, intersectionRatio: 0.5 }]);
     });
 
     expect(mockDisconnect).toHaveBeenCalled();
@@ -78,10 +79,26 @@ describe("WidgetShell pre-warm (IntersectionObserver)", () => {
     await act(async () => {});
 
     await act(async () => {
-      observeCb([{ isIntersecting: false }]);
+      observeCb([{ isIntersecting: false, intersectionRatio: 0 }]);
     });
 
     expect(mockDisconnect).not.toHaveBeenCalled();
+  });
+
+  it("ignores isIntersecting entries with ratio below 0.5 (initial-entry case)", async () => {
+    render(<App config={{ ...SCRT2_CONFIG, preWarm: true }} />);
+    await act(async () => {});
+
+    await act(async () => {
+      observeCb([{ isIntersecting: true, intersectionRatio: 0.1 }]);
+    });
+
+    expect(mockDisconnect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      observeCb([{ isIntersecting: true, intersectionRatio: 0.75 }]);
+    });
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
   it("fires warmUp only once even if observer triggers twice", async () => {
@@ -89,7 +106,7 @@ describe("WidgetShell pre-warm (IntersectionObserver)", () => {
     await act(async () => {});
 
     await act(async () => {
-      observeCb([{ isIntersecting: true }]);
+      observeCb([{ isIntersecting: true, intersectionRatio: 0.9 }]);
     });
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
