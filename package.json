@@ -1,6 +1,6 @@
 {
   "name": "inline-agent-widget",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A bare-minimum, embeddable inline chat widget for Salesforce Agentforce (SCRT2 Messaging for In-App and Web). Renders agent replies as sanitized markdown inside a Shadow DOM.",
   "type": "module",
   "main": "./dist/inline-agent-widget.umd.js",

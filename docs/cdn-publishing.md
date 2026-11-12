@@ -84,16 +84,22 @@ is available only to the upload step. The public CDN check sends no credentials.
 
 ## Release flow
 
-1. Change the widget and bump `package.json` to a new semantic version. Update the
+1. Change the widget, add the newest dated release entry in `CHANGELOG.md`, and
+   bump `package.json` to the matching semantic version. Update the
    root version entries in `package-lock.json` consistently, for example with
    `npm version patch --no-git-tag-version --ignore-scripts`.
 2. Open a PR against `main`. Validation uses Node 22, installs locked dependencies,
-   runs publisher and widget tests, builds the UMD, and records SHA-256/size.
+   runs publisher and widget tests and builds the UMD. For release-input changes,
+   it checks version/lockfile consistency, requires the first changelog heading
+   `## <version> — YYYY-MM-DD` to match with a non-empty release-note bullet, and
+   records SHA-256/size. Documentation-only PRs still report this check without
+   requiring a version bump.
    Pull requests never run the cloud-authentication or publishing job.
 3. Merge after the prerequisite setup is confirmed. A push to `main` affecting
-   release inputs triggers publication. Inputs include `src`, package/lock files,
-   Vite/TypeScript configs, the publisher script/tests and this workflow. Pure
-   documentation changes do not publish.
+   release inputs triggers publication. Inputs include `src`, changelog, package/lock files,
+   Vite/TypeScript configs, the publisher script/tests and this workflow.
+   README and other non-release documentation changes do not publish. Changelog
+   changes are release inputs and require a version bump.
 4. The publishing job downloads the validated artifact and checks its version and
    checksum. It validates the repo variables before attempting WIF authentication.
 5. The Node HTTP client makes one XML API PUT to:
@@ -120,12 +126,22 @@ All publishing jobs use the same concurrency group with cancellation disabled.
 GitHub can replace a pending job with a newer pending job; this is not a durable
 queue promising publication of every intermediate merge.
 
+## Required merge check
+
+Require `Validate CDN release` on `main` through branch protection or a ruleset.
+The PR trigger deliberately has no path filter: a required check must report a
+result on documentation-only PRs too. The workflow detects release-input changes
+against the PR merge base before deciding whether to require a version bump,
+validate the changelog and retain a publishing artifact. Keep the push filter
+and this detection list aligned when adding release inputs.
+
 ## Failures, retries and rollback
 
 | Failure | Meaning / action |
 | --- | --- |
 | Missing provider or unexpected SA | Repository variables are missing/wrong. Obtain the exact provider from John; retain the agreed SA |
 | WIF fails | Confirm provider audience, exact repo/workflow/ref claims, SA binding and API enablement. IAM changes may take time to propagate |
+| Changelog check fails | Add a matching newest dated release heading and a non-empty release-note bullet; commit CHANGELOG.md with the package versions |
 | Version bump check fails | Update package and lockfile versions before merging release-input changes |
 | Upload 401 | Token is invalid/expired; investigate auth and obtain fresh credentials |
 | Upload 403 | Confirm effective bucket IAM and prefix condition. Authorization can fail before a duplicate precondition is evaluated |

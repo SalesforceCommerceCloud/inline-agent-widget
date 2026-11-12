@@ -38,6 +38,17 @@ export function checkVersionChange(version, baseSha, root = process.cwd()) {
   }
 }
 
+export async function validateChangelog(version, root = process.cwd()) {
+  const text = await readFile(resolve(root, "CHANGELOG.md"), "utf8");
+  const sections = text.replace(/^```[^\n]*\n[\s\S]*?^```[^\n]*$/gm, "").split(/^## /m);
+  const entry = sections[1];
+  const heading = entry?.split("\n", 1)[0].trim();
+  const match = heading?.match(/^(\S+) (?:—|-) (\d{4}-\d{2}-\d{2})$/);
+  if (!match || match[1] !== version || !/^[-*] \S.+/m.test(entry.slice(entry.indexOf("\n") + 1))) {
+    throw new Error("CHANGELOG.md must start with a dated release entry matching package.json and include a non-empty release-note bullet.");
+  }
+}
+
 export async function prepareRelease(root = process.cwd(), expected = {}) {
   const pkg = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const version = validateVersion(pkg.version);
@@ -45,6 +56,7 @@ export async function prepareRelease(root = process.cwd(), expected = {}) {
   if (lock.version !== version || lock.packages?.[""]?.version !== version) {
     throw new Error("package-lock.json version entries must match package.json.");
   }
+  await validateChangelog(version, root);
   const bytes = await readFile(resolve(root, BUNDLE_PATH));
   if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
     throw new Error("UMD bundle must be non-empty and no larger than 10 MiB.");
