@@ -224,7 +224,9 @@ Point `demo/index.html` at a real SCRT2 instance/org/ES-name to exercise the ful
 
 ## Publishing a new CDN version
 
-1. Make the widget changes and choose a new semantic version. For a patch release:
+1. Make the widget changes, add a release-note bullet under a new dated heading
+   in `CHANGELOG.md` (for example, `## 0.1.1 — 2026-11-11`), and choose the matching
+   semantic version. For a patch release:
 
    ```bash
    npm version patch --no-git-tag-version --ignore-scripts
@@ -234,8 +236,9 @@ Point `demo/index.html` at a real SCRT2 instance/org/ES-name to exercise the ful
    node scripts/cdn-publish.mjs prepare
    ```
 
-   Commit both `package.json` and `package-lock.json` version changes with the
-   source changes. Build the release from the source you intend to publish.
+   Commit `CHANGELOG.md`, `package.json` and `package-lock.json` with the source
+   changes. The newest changelog entry must match the package version and contain
+   at least one release-note bullet. Build the release from the source you intend to publish.
 2. Open a PR to `main`. The CDN workflow validates release-input changes without
    cloud credentials. After merge, it downloads the validated UMD, authenticates
    through GitHub OIDC/WIF and uploads the versioned object with create-only
@@ -247,8 +250,10 @@ Point `demo/index.html` at a real SCRT2 instance/org/ES-name to exercise the ful
    that the expected CDN script loads. Test the configured widget mode, including
    the host's handoff adapter when using `shopper-agent` mode.
 
-Only release-input changes trigger automatic CDN publication. A README-only
-change does not publish another bundle or need a version bump. To recheck the
+Every PR runs `Validate CDN release`, including documentation-only PRs. Only
+release-input changes require version/changelog validation and trigger automatic
+CDN publication after merge. A README-only change does not publish another bundle
+or need a version bump. Changelog changes count as release inputs. To recheck the
 current main version without uploading, use **Actions → Publish widget to CDN →
 Run workflow → main**, with **verify_only** enabled. If main has moved beyond the
 release, use the original run's artifact and checksum instead.
@@ -262,10 +267,15 @@ automatically increment the version or check that it is greater than the old one
 The initial workflow introduction and manual dispatches do not require a baseline
 version change; the create-only upload guard still applies.
 
-There is currently no changelog validation. A changelog heading does not select
-the published version. Configure `Validate CDN release` as a required check in
-branch protection or a ruleset to make passing validation a prerequisite for
-merging; defining a GitHub Actions job alone does not enforce that merge rule.
+The first release heading in `CHANGELOG.md` must be `## <version> — YYYY-MM-DD`
+(an ASCII `-` separator is also accepted), match the package version, and contain
+a non-empty release-note bullet before the next release heading. Publication
+rejects a missing file, stale heading or empty entry. The package version still
+selects the published URL; the changelog documents that release.
+
+`Validate CDN release` is the check to require through branch protection or a
+ruleset. The workflow runs it on every PR so documentation-only changes can report
+success without a release bump.
 
 An HTTP 412 during upload means the version already exists. Do not overwrite it
 or treat that response as proof that the existing bytes match. Follow the

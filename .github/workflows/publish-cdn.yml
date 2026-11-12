@@ -3,18 +3,10 @@ name: Publish widget to CDN
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite*.config.*'
-      - 'tsconfig*.json'
-      - 'scripts/cdn-publish.mjs'
-      - 'tests/cdn-publish.test.mjs'
-      - '.github/workflows/publish-cdn.yml'
   push:
     branches: [main]
     paths:
+      - 'CHANGELOG.md'
       - 'src/**'
       - 'package.json'
       - 'package-lock.json'
@@ -48,6 +40,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Detect release inputs
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA...HEAD" -- src/ package.json package-lock.json CHANGELOG.md ':(glob)vite*.config.*' ':(glob)tsconfig*.json' scripts/cdn-publish.mjs tests/cdn-publish.test.mjs .github/workflows/publish-cdn.yml; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            [[ "$status" == 1 ]] || exit "$status"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -71,12 +80,14 @@ jobs:
         run: npm run build:umd
 
       - name: Validate version and artifact
+        if: steps.changes.outputs.release == 'true'
         id: release
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/cdn-publish.mjs prepare
 
       - name: Store validated UMD
+        if: steps.changes.outputs.release == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cdn-umd

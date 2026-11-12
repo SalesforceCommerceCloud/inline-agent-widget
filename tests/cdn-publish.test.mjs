@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import {
   SERVICE_ACCOUNT, WORKFLOW_PATH, checkVersionChange, main,
-  prepareRelease, uploadRelease, validateAuth, validateVersion, verifyCdn,
+  prepareRelease, uploadRelease, validateAuth, validateChangelog, validateVersion, verifyCdn,
 } from "../scripts/cdn-publish.mjs";
 
 const script = resolve(dirname(fileURLToPath(import.meta.url)), "../scripts/cdn-publish.mjs");
@@ -22,6 +22,7 @@ async function fixture(version = "1.2.3", bytes = "window.InlineAgentWidget = {}
   await writeFile(join(root, "package.json"), JSON.stringify({ version }));
   await writeFile(join(root, "package-lock.json"), JSON.stringify({ version, packages: { "": { version } } }));
   await writeFile(join(root, "dist/inline-agent-widget.umd.js"), bytes);
+  await writeFile(join(root, "CHANGELOG.md"), `# Changelog\n\n## ${version} — 2026-11-11\n\n- Describe the release behavior.\n`);
   return root;
 }
 
@@ -258,4 +259,32 @@ test("reject inconsistent lockfile versions", async () => {
     await writeFile(join(root, "package-lock.json"), JSON.stringify(lock));
     await assert.rejects(prepareRelease(root), /version entries must match/);
   }
+});
+
+for (const heading of ["1.2.3 — 2026-11-11", "1.2.3 - 2026-11-11"]) {
+  test(`accept changelog entry ${heading}`, async () => {
+    const root = await fixture();
+    await writeFile(join(root, "CHANGELOG.md"), `# Changelog\n\n## ${heading}\n\n- Fix the widget.\n\n## 1.2.2 — 2026-11-10\n\n- Previous release.\n`);
+    await validateChangelog("1.2.3", root);
+  });
+}
+for (const text of [
+  "# Changelog\n",
+  "## 1.2.2 — 2026-11-11\n\n- Wrong release.\n",
+  "## 1.2.3\n\n- Missing date.\n",
+  "## 1.2.3 — 2026-11-11\n\n## 1.2.2 — 2026-11-10\n\n- Older notes cannot satisfy the new entry.\n",
+  "## 1.2.3 — 2026-11-11\n\n- \n",
+  "## 1.2.2 — 2026-11-10\n\n- Older release.\n\n## 1.2.3 — 2026-11-11\n\n- New release must be first.\n",
+  "```md\n## 1.2.3 — 2026-11-11\n\n- Example only.\n```\n",
+]) {
+  test(`reject incomplete or mismatched changelog ${JSON.stringify(text)}`, async () => {
+    const root = await fixture();
+    await writeFile(join(root, "CHANGELOG.md"), text);
+    await assert.rejects(prepareRelease(root), /CHANGELOG.md/);
+  });
+}
+test("reject a missing changelog before publication", async () => {
+  const root = await fixture();
+  await rm(join(root, "CHANGELOG.md"));
+  await assert.rejects(prepareRelease(root), /ENOENT/);
 });
