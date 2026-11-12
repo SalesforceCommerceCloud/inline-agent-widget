@@ -225,7 +225,7 @@ Point `demo/index.html` at a real SCRT2 instance/org/ES-name to exercise the ful
 ## Publishing a new CDN version
 
 1. Make the widget changes, add a release-note bullet under a new dated heading
-   in `CHANGELOG.md` (for example, `## 0.1.1 — 2026-11-11`), and choose the matching
+   in `CHANGELOG.md` (for example, `## 0.2.1 — 2026-11-11`), and choose the matching
    semantic version. For a patch release:
 
    ```bash

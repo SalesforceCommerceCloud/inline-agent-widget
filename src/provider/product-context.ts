@@ -120,7 +120,7 @@ export function buildPdpInlineContext(
   return [
     {
       name: "commerce_agent_context",
-      value: { valueType: "TextValue", textValue: JSON.stringify(context) },
+      value: { valueType: "StructuredValue", value: context },
     },
   ];
 }
