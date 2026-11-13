@@ -2,6 +2,11 @@
 
 The release version comes from `package.json`. Keep the newest dated entry first.
 
+## 0.3.0 — 2026-11-13
+
+- Unify hybrid mode shopper-agent redirect with shopper-agent mode, replacing direct Cimulate DOM manipulation with the shared handoff CustomEvent.
+- Accept both old (inline_pdp/main_agent) and new (inline/shopper-agent) answerable_by values from BYON.
+
 ## 0.2.1 — 2026-11-11
 
 - Require a dated changelog entry matching the package version before CDN publication.
