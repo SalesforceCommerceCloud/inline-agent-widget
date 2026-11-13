@@ -149,9 +149,9 @@ function collectSuggestions(value: unknown): SuggestionItem[] {
         .map((item) => {
           const result: SuggestionItem = { text: (item.text as string).trim() };
           const ab = item.answerable_by;
-          if (ab === "inline" || ab === "inline_pdp") {
+          if (ab === "inline") {
             result.answerable_by = "inline";
-          } else if (ab === "shopper-agent" || ab === "main_agent") {
+          } else if (ab === "shopper-agent") {
             result.answerable_by = "shopper-agent";
           }
           return result;
