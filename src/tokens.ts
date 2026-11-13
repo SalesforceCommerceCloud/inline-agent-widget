@@ -148,10 +148,10 @@ function collectSuggestions(value: unknown): SuggestionItem[] {
         .filter((item) => typeof item.text === "string" && item.text.trim().length > 0)
         .map((item) => {
           const result: SuggestionItem = { text: (item.text as string).trim() };
-          const ab = item.answerable_by;
-          if (ab === "inline" || ab === "inline_pdp") {
+          const answerableBy = item.answerable_by;
+          if (answerableBy === "inline" || answerableBy === "inline_pdp") {
             result.answerable_by = "inline";
-          } else if (ab === "shopper-agent" || ab === "main_agent") {
+          } else if (answerableBy === "shopper-agent" || answerableBy === "main_agent") {
             result.answerable_by = "shopper-agent";
           }
           return result;
