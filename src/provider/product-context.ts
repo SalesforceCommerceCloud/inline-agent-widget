@@ -21,7 +21,7 @@ export interface CommerceAgentContext {
   [key: string]: unknown;
   version: string;
   page_context_type: string;
-  page_context_data: { id: string };
+  page_context_data: Record<string, unknown>;
   suggestion_routing?: boolean;
 }
 

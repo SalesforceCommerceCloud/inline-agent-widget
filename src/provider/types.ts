@@ -31,6 +31,28 @@ export interface WidgetConfig {
   mode?: "inline" | "shopper-agent" | "hybrid";
 
   /**
+   * Storefront page type the widget is placed on. Determines which context
+   * is included in handoff events and which pill source is used.
+   * - `"pdp"` (default) — product detail page
+   * - `"plp"` — product listing / category page
+   * - `"srp"` — search results page
+   */
+  pageType?: "pdp" | "plp" | "srp";
+
+  /** Category ID for PLP pages (e.g. "mens-clothing-jackets"). */
+  categoryId?: string;
+
+  /**
+   * Pre-generated opener questions for a category page, analogous to
+   * `pdpQuestions` for PDP. Stored on the category object's custom attribute
+   * (`c_categoryQuestions`) and passed through by the storefront.
+   */
+  categoryQuestions?: string[];
+
+  /** Search query string for SRP pages (e.g. "waterproof jackets"). */
+  searchQuery?: string;
+
+  /**
    * Current PDP product name, used to template the InputBar placeholder as
    * `"Ask me anything about <productName>"`. When unset, the InputBar falls
    * back to `placeholder` (or the generic default). Sourced from SCAPI's

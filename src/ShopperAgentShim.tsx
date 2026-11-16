@@ -8,13 +8,18 @@ import {
 } from "react";
 import { SparkleIcon, SendIcon } from "./components/icons";
 import type { WidgetConfig } from "./provider/types";
+import { resolveProductId } from "./provider/product-context";
 
 export const HANDOFF_EVENT = "inline-agent-widget:handoff";
+
+export type PageContextType = "pdp_inline" | "plp_inline" | "srp_inline";
 
 export interface HandoffEventDetail {
   question: string;
   productName?: string;
   source: "pill" | "input";
+  pageContextType?: PageContextType;
+  pageContextData?: Record<string, unknown>;
 }
 
 /**
@@ -33,16 +38,19 @@ export function ShopperAgentShim({
 }) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const pills = config.pdpQuestions ?? [];
+  const pageType = config.pageType ?? "pdp";
+  const pills = resolvePills(config, pageType);
 
   const dispatchHandoff = (question: string, source: "pill" | "input") => {
     const trimmed = question.trim();
     if (trimmed.length === 0) return;
     const target: EventTarget = hostElement ?? window;
+    const context = buildHandoffContext(config, pageType);
     const detail: HandoffEventDetail = {
       question: trimmed,
       productName: config.productName,
       source,
+      ...context,
     };
     target.dispatchEvent(
       new CustomEvent<HandoffEventDetail>(HANDOFF_EVENT, {
@@ -81,10 +89,7 @@ export function ShopperAgentShim({
   }, [text]);
 
   const placeholder =
-    config.placeholder ??
-    (config.productName
-      ? `Ask me anything about ${config.productName}`
-      : "Ask me anything");
+    config.placeholder ?? defaultPlaceholder(config, pageType);
 
   return (
     <div className="widget">
@@ -136,4 +141,65 @@ export function ShopperAgentShim({
       ) : null}
     </div>
   );
+}
+
+function resolvePills(
+  config: WidgetConfig,
+  pageType: "pdp" | "plp" | "srp",
+): string[] {
+  switch (pageType) {
+    case "plp":
+      return config.categoryQuestions ?? [];
+    case "srp":
+      return [];
+    case "pdp":
+    default:
+      return config.pdpQuestions ?? [];
+  }
+}
+
+function buildHandoffContext(
+  config: WidgetConfig,
+  pageType: "pdp" | "plp" | "srp",
+): Pick<HandoffEventDetail, "pageContextType" | "pageContextData"> {
+  switch (pageType) {
+    case "plp": {
+      if (!config.categoryId) return {};
+      return {
+        pageContextType: "plp_inline",
+        pageContextData: { categoryId: config.categoryId },
+      };
+    }
+    case "srp": {
+      if (!config.searchQuery) return {};
+      return {
+        pageContextType: "srp_inline",
+        pageContextData: { query: config.searchQuery },
+      };
+    }
+    case "pdp":
+    default: {
+      const productId = resolveProductId(window.location, config);
+      if (!productId) return {};
+      return {
+        pageContextType: "pdp_inline",
+        pageContextData: { id: productId },
+      };
+    }
+  }
+}
+
+function defaultPlaceholder(
+  config: WidgetConfig,
+  pageType: "pdp" | "plp" | "srp",
+): string {
+  if (config.productName) return `Ask me anything about ${config.productName}`;
+  switch (pageType) {
+    case "plp":
+      return "Ask me about this category";
+    case "srp":
+      return "Ask me about these results";
+    default:
+      return "Ask me anything";
+  }
 }
