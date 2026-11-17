@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPdpInlineContext,
+  buildPlpInlineContext,
+  buildSrpInlineContext,
   resolveProductId,
 } from "../../src/provider/product-context";
 
@@ -143,5 +145,37 @@ describe("buildPdpInlineContext", () => {
     const valB = second[0].value as { valueType: "StructuredValue"; value: Record<string, unknown> };
     expect((valA.value.page_context_data as { id: string }).id).toBe("PRODUCT-A");
     expect((valB.value.page_context_data as { id: string }).id).toBe("PRODUCT-B");
+  });
+});
+
+describe("buildPlpInlineContext", () => {
+  it("builds a plp_inline StructuredValue with the category id", () => {
+    const context = buildPlpInlineContext("mens-clothing-jackets");
+    expect(context).toHaveLength(1);
+    expect(context[0].name).toBe("commerce_agent_context");
+    expect(context[0].value).toEqual({
+      valueType: "StructuredValue",
+      value: {
+        version: "1.0.0",
+        page_context_type: "plp_inline",
+        page_context_data: { categoryId: "mens-clothing-jackets" },
+      },
+    });
+  });
+});
+
+describe("buildSrpInlineContext", () => {
+  it("builds a srp_inline StructuredValue with the search query", () => {
+    const context = buildSrpInlineContext("waterproof jackets");
+    expect(context).toHaveLength(1);
+    expect(context[0].name).toBe("commerce_agent_context");
+    expect(context[0].value).toEqual({
+      valueType: "StructuredValue",
+      value: {
+        version: "1.0.0",
+        page_context_type: "srp_inline",
+        page_context_data: { query: "waterproof jackets" },
+      },
+    });
   });
 });

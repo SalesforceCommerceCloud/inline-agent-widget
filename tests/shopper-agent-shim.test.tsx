@@ -203,6 +203,131 @@ describe("ShopperAgentShim", () => {
     }
   });
 
+  it("renders categoryQuestions as pills on a PLP page", () => {
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "plp",
+          categoryId: "mens-jackets",
+          categoryName: "Men's Jackets",
+          categoryQuestions: ["What's on sale?", "Most popular?"],
+          pdpQuestions: ["Should not appear"],
+        }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "What's on sale?" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Most popular?" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Should not appear" })).toBeNull();
+  });
+
+  it("renders no pills on SRP page", () => {
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "srp",
+          searchQuery: "waterproof jackets",
+          pdpQuestions: ["Should not appear"],
+        }}
+      />,
+    );
+    expect(screen.queryByRole("list", { name: "Suggested questions" })).toBeNull();
+  });
+
+  it("uses PLP placeholder when no productName", () => {
+    render(
+      <ShopperAgentShim
+        config={{ ...BASE_CONFIG, productName: undefined, pageType: "plp" }}
+      />,
+    );
+    const textarea = screen.getByRole("textbox", { name: "Ask a question" }) as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe("Ask me about this category");
+  });
+
+  it("uses SRP placeholder when no productName", () => {
+    render(
+      <ShopperAgentShim
+        config={{ ...BASE_CONFIG, productName: undefined, pageType: "srp" }}
+      />,
+    );
+    const textarea = screen.getByRole("textbox", { name: "Ask a question" }) as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe("Ask me about these results");
+  });
+
+  it("includes pageContextType and pageContextData in handoff event for PLP", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handler = vi.fn();
+    host.addEventListener(HANDOFF_EVENT, handler as EventListener);
+
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "plp",
+          categoryId: "mens-jackets",
+          categoryName: "Men's Jackets",
+          categoryQuestions: ["What's on sale?"],
+        }}
+        hostElement={host}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "What's on sale?" }));
+
+    const detail = (handler.mock.calls[0][0] as CustomEvent<HandoffEventDetail>).detail;
+    expect(detail.pageContextType).toBe("plp_inline");
+    expect(detail.pageContextData).toEqual({ categoryName: "Men's Jackets" });
+  });
+
+  it("includes pageContextType and pageContextData in handoff event for SRP", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handler = vi.fn();
+    host.addEventListener(HANDOFF_EVENT, handler as EventListener);
+
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "srp",
+          searchQuery: "waterproof jackets",
+        }}
+        hostElement={host}
+      />,
+    );
+    const textarea = screen.getByRole("textbox", { name: "Ask a question" });
+    fireEvent.change(textarea, { target: { value: "Any deals?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+
+    const detail = (handler.mock.calls[0][0] as CustomEvent<HandoffEventDetail>).detail;
+    expect(detail.pageContextType).toBe("srp_inline");
+    expect(detail.pageContextData).toEqual({ query: "waterproof jackets" });
+  });
+
+  it("omits pageContext fields when PLP has no categoryId or categoryName", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handler = vi.fn();
+    host.addEventListener(HANDOFF_EVENT, handler as EventListener);
+
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "plp",
+          categoryQuestions: ["Question?"],
+        }}
+        hostElement={host}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Question?" }));
+
+    const detail = (handler.mock.calls[0][0] as CustomEvent<HandoffEventDetail>).detail;
+    expect(detail.pageContextType).toBeUndefined();
+    expect(detail.pageContextData).toBeUndefined();
+  });
+
   it("renderInto skips SCRT2 config validation in shopper-agent mode", async () => {
     // SCRT2 fields deliberately blank — the old guard would render a
     // "missing required config" error. With mode="shopper-agent" the shim

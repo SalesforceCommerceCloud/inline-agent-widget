@@ -21,7 +21,7 @@ export interface CommerceAgentContext {
   [key: string]: unknown;
   version: string;
   page_context_type: string;
-  page_context_data: { id: string };
+  page_context_data: Record<string, unknown>;
   suggestion_routing?: boolean;
 }
 
@@ -115,6 +115,42 @@ export function buildPdpInlineContext(
     page_context_type: "pdp_inline",
     page_context_data: { id: productId },
     ...(options?.suggestionRouting && { suggestion_routing: true }),
+  };
+
+  return [
+    {
+      name: "commerce_agent_context",
+      value: { valueType: "StructuredValue", value: context },
+    },
+  ];
+}
+
+/** Build commerce_agent_context for a category / product listing page. */
+export function buildPlpInlineContext(
+  categoryId: string,
+): SessionContextVariable[] {
+  const context: CommerceAgentContext = {
+    version: COMMERCE_AGENT_CONTEXT_VERSION,
+    page_context_type: "plp_inline",
+    page_context_data: { categoryId },
+  };
+
+  return [
+    {
+      name: "commerce_agent_context",
+      value: { valueType: "StructuredValue", value: context },
+    },
+  ];
+}
+
+/** Build commerce_agent_context for a search results page. */
+export function buildSrpInlineContext(
+  query: string,
+): SessionContextVariable[] {
+  const context: CommerceAgentContext = {
+    version: COMMERCE_AGENT_CONTEXT_VERSION,
+    page_context_type: "srp_inline",
+    page_context_data: { query },
   };
 
   return [
