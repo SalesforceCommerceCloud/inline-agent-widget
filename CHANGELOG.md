@@ -2,6 +2,11 @@
 
 The release version comes from `package.json`. Keep the newest dated entry first.
 
+## 0.4.0 — 2026-11-17
+
+- Add PLP and SRP page type support for commerce_agent_context in both inline and handoff modes.
+- Send category name in handoff event detail for SRP-based context.
+
 ## 0.3.0 — 2026-11-13
 
 - Unify hybrid mode shopper-agent redirect with shopper-agent mode, replacing direct Cimulate DOM manipulation with the shared handoff CustomEvent.
