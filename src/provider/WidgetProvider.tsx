@@ -7,7 +7,12 @@ import type { SessionPersistence } from "./ensure-connected";
 import { initialWidgetState, widgetReducer } from "./reducer";
 import { buildSessionKey, clearSession, loadSession, saveSession } from "./session-store";
 import type { WidgetConfig } from "./types";
-import { buildPdpInlineContext, resolveProductId } from "./product-context";
+import {
+  buildPdpInlineContext,
+  buildPlpInlineContext,
+  buildSrpInlineContext,
+  resolveProductId,
+} from "./product-context";
 import { classifyMessage, shouldAppendStreamingToken } from "./welcome-tracker";
 
 function isMessageTooLong(err: unknown): boolean {
@@ -28,6 +33,45 @@ function toUserMessage(err: unknown): string {
   if (isWelcomeTimeout(err)) return "Taking longer than expected to connect. Try again.";
   if (err instanceof AgentforceNetworkError) return "Unable to reach the server. Please try again.";
   return "Something went wrong. Please try again.";
+}
+
+import type { SessionContextVariable } from "../sdk";
+
+interface PageContextSnapshot {
+  productIdParam?: string;
+  productIdPattern?: string;
+  pageType?: "pdp" | "plp" | "srp";
+  categoryId?: string;
+  searchQuery?: string;
+  mode?: string;
+}
+
+function resolveInlineContext(
+  snapshot: PageContextSnapshot,
+): SessionContextVariable[] | undefined {
+  const pageType = snapshot.pageType ?? "pdp";
+  switch (pageType) {
+    case "plp": {
+      const categoryId = snapshot.categoryId?.trim();
+      return categoryId ? buildPlpInlineContext(categoryId) : undefined;
+    }
+    case "srp": {
+      const query = snapshot.searchQuery?.trim();
+      return query ? buildSrpInlineContext(query) : undefined;
+    }
+    case "pdp":
+    default: {
+      const productId =
+        typeof window !== "undefined"
+          ? resolveProductId(window.location, snapshot)
+          : null;
+      return productId
+        ? buildPdpInlineContext(productId, {
+            suggestionRouting: snapshot.mode === "hybrid",
+          })
+        : undefined;
+    }
+  }
 }
 
 /** Buffered pre-echo Chatbot entry: we don't yet know the echo cutoff,
@@ -93,12 +137,20 @@ export function WidgetProvider({
     dispatch({ type: "SET_PDP_QUESTIONS", questions: pdpQuestions ?? [] });
   }, [pdpQuestionsKey]);
 
-  // The URL-based product-context config, held in a ref so the dependency-stable
-  // sendMessage callback (deps: []) reads the latest without being recreated.
-  const productContextRef = useRef({ productIdParam, productIdPattern });
+  // Page-context config held in a ref so the dependency-stable sendMessage
+  // callback (deps: []) reads the latest values without being recreated.
+  const pageContextRef = useRef({
+    productIdParam, productIdPattern,
+    pageType: config.pageType, categoryId: config.categoryId,
+    searchQuery: config.searchQuery, mode: config.mode,
+  });
   useEffect(() => {
-    productContextRef.current = { productIdParam, productIdPattern };
-  }, [productIdParam, productIdPattern]);
+    pageContextRef.current = {
+      productIdParam, productIdPattern,
+      pageType: config.pageType, categoryId: config.categoryId,
+      searchQuery: config.searchQuery, mode: config.mode,
+    };
+  }, [productIdParam, productIdPattern, config.pageType, config.categoryId, config.searchQuery, config.mode]);
 
   // Clear stale question/answer when the user navigates between PDPs via SPA
   // routing. SPA frameworks use pushState/replaceState (no popstate event) and
@@ -366,14 +418,10 @@ export function WidgetProvider({
     // every error-return path below.
     dispatch({ type: "SET_AGENT_TYPING", typing: true });
 
-    // Resolve the product id from the current URL immediately before each send.
-    // The agent resets these external variables after every turn, so PDP context
-    // must be attached to every applicable message. Off a PDP, context is
-    // omitted and the widget retains its general-chat behavior.
-    const productId =
-      typeof window !== "undefined"
-        ? resolveProductId(window.location, productContextRef.current)
-        : null;
+    // Build commerce_agent_context based on the page the widget is on.
+    // The agent resets these external variables after every turn, so context
+    // must be attached to every applicable message.
+    const contextVars = resolveInlineContext(pageContextRef.current);
 
     // SCRT2 only forwards commerce_agent_context after the bot joins; posting
     // earlier means SCRT2 falls back to the Flow handler and drops the
@@ -384,14 +432,7 @@ export function WidgetProvider({
       if (clientRef.current !== client) throw new Error("unmounted");
       await manager.waitForWelcome(6000);
       if (clientRef.current !== client) throw new Error("unmounted");
-      await client.sendMessage(
-        trimmed,
-        productId
-          ? buildPdpInlineContext(productId, {
-              suggestionRouting: config.mode === "hybrid",
-            })
-          : undefined,
-      );
+      await client.sendMessage(trimmed, contextVars);
     };
 
     try {
