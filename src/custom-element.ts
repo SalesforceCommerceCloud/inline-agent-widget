@@ -20,6 +20,7 @@ const OBSERVED = [
   "mode",
   "page-type",
   "category-id",
+  "category-name",
   "category-questions",
   "search-query",
 ] as const;
@@ -56,6 +57,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
     mode: readMode(attr("mode")),
     pageType: readPageType(attr("page-type")),
     categoryId: attr("category-id"),
+    categoryName: attr("category-name"),
     categoryQuestions: parsePdpQuestions(attr("category-questions")),
     searchQuery: attr("search-query"),
   };

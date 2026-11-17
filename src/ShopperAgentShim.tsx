@@ -164,10 +164,11 @@ function buildHandoffContext(
 ): Pick<HandoffEventDetail, "pageContextType" | "pageContextData"> {
   switch (pageType) {
     case "plp": {
-      if (!config.categoryId) return {};
+      const name = config.categoryName || config.categoryId;
+      if (!name) return {};
       return {
         pageContextType: "plp_inline",
-        pageContextData: { categoryId: config.categoryId },
+        pageContextData: { categoryName: name },
       };
     }
     case "srp": {
