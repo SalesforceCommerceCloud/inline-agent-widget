@@ -151,7 +151,7 @@ function resolvePills(
     case "plp":
       return config.categoryQuestions ?? [];
     case "srp":
-      return [];
+      return config.srpQuestions ?? [];
     case "pdp":
     default:
       return config.pdpQuestions ?? [];
