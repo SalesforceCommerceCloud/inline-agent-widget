@@ -55,6 +55,9 @@ export interface WidgetConfig {
   /** Search query string for SRP pages (e.g. "waterproof jackets"). */
   searchQuery?: string;
 
+  /** Static opener questions for SRP pages, rendered as tappable pills. */
+  srpQuestions?: string[];
+
   /**
    * Current PDP product name, used to template the InputBar placeholder as
    * `"Ask me anything about <productName>"`. When unset, the InputBar falls

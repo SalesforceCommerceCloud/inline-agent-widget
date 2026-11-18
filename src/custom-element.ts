@@ -60,6 +60,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
     categoryName: attr("category-name"),
     categoryQuestions: parsePdpQuestions(attr("category-questions")),
     searchQuery: attr("search-query"),
+    srpQuestions: parsePdpQuestions(attr("search-questions")),
   };
 }
 
