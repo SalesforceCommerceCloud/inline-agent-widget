@@ -2,6 +2,10 @@
 
 The release version comes from `package.json`. Keep the newest dated entry first.
 
+## 0.5.0 — 2026-11-19
+
+- Add `search-questions` attribute and `srpQuestions` config field for rendering static opener pills on SRP pages, separate from `category-questions` used on PLP.
+
 ## 0.4.0 — 2026-11-17
 
 - Add PLP and SRP page type support for commerce_agent_context in both inline and handoff modes.
