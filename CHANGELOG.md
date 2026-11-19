@@ -2,6 +2,10 @@
 
 The release version comes from `package.json`. Keep the newest dated entry first.
 
+## 0.5.2 — 2026-11-19
+
+- Render category description in shopper-agent mode (PLP) above question pills.
+
 ## 0.5.1 — 2026-11-19
 
 - Add `category-description` attribute and `categoryDescription` config field for rendering category description text above question pills on PLP pages.
