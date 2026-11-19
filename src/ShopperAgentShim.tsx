@@ -124,6 +124,10 @@ export function ShopperAgentShim({
         </button>
       </form>
 
+      {pageType === "plp" && config.categoryDescription && (
+        <p className="category-description">{config.categoryDescription}</p>
+      )}
+
       {pills.length > 0 ? (
         <ul className="pills" aria-label="Suggested questions">
           {pills.map((q) => (
