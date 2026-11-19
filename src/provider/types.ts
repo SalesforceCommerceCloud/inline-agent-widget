@@ -45,6 +45,9 @@ export interface WidgetConfig {
   /** Category display name for PLP pages (e.g. "Men's Jackets"). */
   categoryName?: string;
 
+  /** Category description for PLP pages, shown above the question pills. */
+  categoryDescription?: string;
+
   /**
    * Pre-generated opener questions for a category page, analogous to
    * `pdpQuestions` for PDP. Stored on the category object's custom attribute

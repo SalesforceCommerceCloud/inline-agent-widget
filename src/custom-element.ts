@@ -58,6 +58,7 @@ function readConfig(el: HTMLElement): WidgetConfig {
     pageType: readPageType(attr("page-type")),
     categoryId: attr("category-id"),
     categoryName: attr("category-name"),
+    categoryDescription: attr("category-description"),
     categoryQuestions: parsePdpQuestions(attr("category-questions")),
     searchQuery: attr("search-query"),
     srpQuestions: parsePdpQuestions(attr("search-questions")),
