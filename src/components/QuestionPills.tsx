@@ -45,7 +45,7 @@ export function QuestionPills() {
     !hasAsked && config.pageType === "plp" ? config.categoryDescription : undefined;
 
   return (
-    <div>
+    <>
       {description && (
         <p className="category-description">{description}</p>
       )}
@@ -72,6 +72,6 @@ export function QuestionPills() {
           );
         })}
       </ul>
-    </div>
+    </>
   );
 }
