@@ -188,6 +188,15 @@
   outline-offset: 2px;
 }
 
+/* ── Category description ── */
+.category-description {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--iaw-fg);
+  opacity: 0.8;
+}
+
 /* ── Opener question pills ── */
 .pills {
   display: flex;
