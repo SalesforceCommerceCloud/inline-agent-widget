@@ -41,29 +41,37 @@ export function QuestionPills() {
     );
   };
 
+  const description =
+    !hasAsked && config.pageType === "plp" ? config.categoryDescription : undefined;
+
   return (
-    <ul className="pills" aria-label="Suggested questions">
-      {pills.map((pill) => {
-        const isMainAgent = isHybrid && pill.answerable_by === "shopper-agent";
-        return (
-          <li key={pill.text} className="pills-item">
-            <button
-              className={`pill${isMainAgent ? " pill--main-agent" : ""}`}
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                if (isMainAgent) {
-                  dispatchHandoff(pill.text);
-                } else {
-                  void sendMessage(pill.text);
-                }
-              }}
-            >
-              {pill.text}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <div>
+      {description && (
+        <p className="category-description">{description}</p>
+      )}
+      <ul className="pills" aria-label="Suggested questions">
+        {pills.map((pill) => {
+          const isMainAgent = isHybrid && pill.answerable_by === "shopper-agent";
+          return (
+            <li key={pill.text} className="pills-item">
+              <button
+                className={`pill${isMainAgent ? " pill--main-agent" : ""}`}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (isMainAgent) {
+                    dispatchHandoff(pill.text);
+                  } else {
+                    void sendMessage(pill.text);
+                  }
+                }}
+              >
+                {pill.text}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
