@@ -68,13 +68,12 @@
         "persist: no restorable session …" before a fresh handshake.
       -->
       <inline-agent-widget
-        scrt2-url="https://q3sdb1504032026zs3.test2.my.pc-rnd.salesforce-scrt.com"
-        org-id="00DQZ0000093xsn"
-        es-developer-name="Q3_FreeFormNto_CC"
+        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+        org-id="YOUR_ORG_ID"
+        es-developer-name="YOUR_ES_DEVELOPER_NAME"
         capabilities-version="66"
         product-id-param="pid"
         placeholder="Type a message…"
-        mode="hybrid"
         persist-session
         enable-logging
         pre-warm
@@ -93,7 +92,7 @@
     -->
     <script>
       const demoUrl = new URL(window.location.href);
-      demoUrl.searchParams.set("pid", "2010575");
+      demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
       window.history.replaceState(null, "", demoUrl);
     </script>
     <script type="module" src="/src/index.ts"></script>
