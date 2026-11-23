@@ -284,3 +284,7 @@ or treat that response as proof that the existing bytes match. Follow the
 ## License
 
 MIT. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
+
+## Browser integration checks
+
+See [e2e/README.md](e2e/README.md) for the shared production-UMD contracts and single-shot deployed-storefront health checks.
