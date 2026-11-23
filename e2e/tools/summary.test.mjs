@@ -4,8 +4,9 @@ import { summarize } from './summary.mjs';
 import { validateTarget, loadTarget, targets } from '../targets.mjs';
 test('summary preserves failure stages without transcripts, errors or network data', () => {
     const body = Buffer.from(JSON.stringify({ stages: ['WIDGET_RENDER', 'DRAWER_OPEN', 'secret-token'], payload: 'secret-token' })).toString('base64');
-    const result = summarize({ suites: [{ specs: [{ tests: [{ projectName: 'storefront-health', results: [{ status: 'failed', error: { message: 'secret-token' }, attachments: [{ name: 'sanitized-stages', body }] }] }] }] }] });
+    const result = summarize({ suites: [{ specs: [{ tests: [{ projectName: 'storefront-health', results: [{ status: 'failed', error: { message: 'MESSAGE_SENT: secret-token' }, attachments: [{ name: 'sanitized-stages', body }] }] }] }] }] });
     assert.equal(result.passed, false);
+    assert.equal(result.tests[0].failureStage, 'MESSAGE_SENT');
     assert.deepEqual(result.tests[0].stages, ['WIDGET_RENDER', 'DRAWER_OPEN']);
     assert.equal(JSON.stringify(result).includes('secret-token'), false);
 });

@@ -15,7 +15,12 @@ export function summarize(report, source = 'unknown') {
                         stages = (data.stages || []).filter((s) => completedStages.has(s) || /^(WIDGET_RENDER|METADATA_QUESTIONS_PLACEMENT):[a-zA-Z0-9_-]+$/.test(s));
                     }
                     const allowed = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
-                    tests.push({ project: test.projectName, status: allowed.has(result?.status) ? result.status : 'interrupted', stages });
+                    const failure = result?.error?.message?.match(/\b(PDP_HTTP|TARGET|CONFIGURATION|WIDGET_RENDER|STARTER_QUESTIONS|PLACEMENT|DRAWER_OPEN|MESSAGE_SENT|CONTEXT_TRANSMISSION|MESSAGE_ACCEPTED|AGENT_REPLY|REPLY_RENDERED|COLD_HANDSHAKE|DELIVERY|CONTEXT_ACCEPTANCE):/);
+                    const health = result?.attachments?.find((a) => a.name === 'sanitized-health' && a.body);
+                    const count = health ? JSON.parse(Buffer.from(health.body, 'base64').toString('utf8')).requestCount : undefined;
+                    tests.push({ project: test.projectName, status: allowed.has(result?.status) ? result.status : 'interrupted', stages,
+                        failureStage: result?.status === 'passed' ? null : failure?.[1] || 'UNKNOWN',
+                        requestCount: Number.isInteger(count) && count >= 0 && count <= 100 ? count : null });
                 }
             }
             visit(suite.suites);
