@@ -13,26 +13,14 @@ export async function visit(page: Page, product = pdps[0]) {
     await expect(embedded(page)).toHaveAttribute('product-name', product.name);
 }
 export async function evidence(page: Page, info: TestInfo, stages: string[]) {
-    const config = await embedded(page).evaluate((el) => ({
-        mode: el.getAttribute('mode') || 'inline',
-        preWarm: el.hasAttribute('pre-warm'),
-        productName: el.getAttribute('product-name')
-    }));
-    const assets = await page.locator('script[src]').evaluateAll((nodes) =>
-        nodes
-            .map((node) => node.getAttribute('src'))
-            .filter((src) => /inline-agent-widget|messaging\.umd|shopper-agent-handoff/.test(src || ''))
-            .map((src) => {
-                const url = new URL(src!, location.href);
-                return url.origin + url.pathname;
-            })
-    );
+    const config = await embedded(page)
+        .evaluate((el) => ({
+            mode: el.getAttribute('mode') || 'inline',
+            preWarm: el.hasAttribute('pre-warm')
+        }))
+        .catch(() => ({}));
     await info.attach('sanitized-stages', {
-        body: JSON.stringify(
-            { target: { id: target.id, origin }, stages, config, assets, at: new Date().toISOString() },
-            null,
-            2
-        ),
+        body: JSON.stringify({ stages, config }),
         contentType: 'application/json'
     });
 }
@@ -127,8 +115,7 @@ export function installProbe() {
                                     nonempty: typeof text === 'string' && text.trim().length > 0,
                                     conversation: body.conversationId || entry.conversationId || null
                                 });
-                            } catch {
-                            }
+                            } catch {}
                         }
                     }
                 } catch {

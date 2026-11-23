@@ -26,4 +26,14 @@ PRs run controlled regression only. To request one live proof before merge, appl
 
 The live job disables screenshots, traces and video. It uploads only the allowlisted status/stage summary and corresponding HTML; it never uploads the full Playwright report, transcripts, browser storage or raw network payloads. GitHub artifact access follows repository visibility; this summary deliberately contains no chat content. Controlled fixture reports may contain synthetic data. Source commit and observed deployed asset versions are distinct; a passing fixture does not prove deployment.
 
+## Reading the reports
+
+The **widget-regression** Actions artifact contains the native detailed Playwright HTML report for controlled tests. Extract it, then run `npx playwright show-report <extracted-directory>` (or `npm run report` after a local run). Select a scenario and expand its named steps to see setup, actions, assertions and durations. Coverage/environment annotations explain the scope. Failure screenshots and traces contain controlled fixture data only. Desktop/mobile means Chromium emulation, not native-device or cross-browser certification.
+
+The **zyss-health-sanitized** artifact contains `index.html` and `summary.json`. Open its HTML directly: it shows run status/counts, source/run link, test durations, fixed check names and phase timings, failure stage, observed question count and allowlisted saved mode/pre-warm state. Missing/failed/skipped results cannot appear healthy. A runner failure or missing Playwright JSON generates a safe incomplete-report artifact. A step not reached is `not-run`; older reports without step evidence say `not-recorded` rather than invent timings. Raw errors, arbitrary step titles, paths, question/answer text and unknown metadata never enter the export.
+
+Both artifacts are retained for 14 days on new runs. Each Actions job summary explains where to find its report. A controlled HTML report is for debugging individual tests; the sanitized live report is for safe operational diagnosis. Neither requires S3, IAM, UIP, Trino or Superset. Those integrations are deferred; no schedule or publishing identity is enabled here.
+
+The reporting change is validated with controlled browser tests and synthetic success/failure/missing-report cases. It does not submit another live question; new measured live phase timings will appear on the next separately authorized live run.
+
 Each live attempt is single-shot. Investigate a failure before authorizing another question. The prior local monitor remains paused until an explicit handover decision.

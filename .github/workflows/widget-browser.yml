@@ -3,7 +3,14 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
-    paths: ['e2e/**', 'src/**', 'package*.json', 'vite*.config.*', '.github/workflows/widget-browser.yml']
+    paths:
+      [
+        'e2e/**',
+        'src/**',
+        'package*.json',
+        'vite*.config.*',
+        '.github/workflows/widget-browser.yml',
+      ]
   workflow_dispatch:
     inputs:
       live_chat:
@@ -17,6 +24,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   regression:
+    name: Shared widget contracts (desktop and mobile)
     if: github.event.action != 'labeled'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -32,14 +40,24 @@ jobs:
       - run: npm ci --prefix e2e
       - run: cd e2e && npx playwright install --with-deps chromium
       - run: npm run test:tools --prefix e2e
-      - run: npm test --prefix e2e
+      - name: Run controlled checks with grouped report steps
+        run: npm test --prefix e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: widget-regression
           path: e2e/playwright-report
-          retention-days: 7
+          retention-days: 14
+      - name: Report guide
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'REPORT'
+          ### Shared widget browser report
+          Download **widget-regression**, extract it, and run `npx playwright show-report <extracted-directory>`.
+          The HTML contains named scenario steps, per-step durations, coverage annotations and failure traces/screenshots from controlled fixtures. No live agent was contacted by this job.
+          REPORT
   live-health:
+    name: Live storefront check (explicit opt-in)
     if: >-
       github.repository == 'SalesforceCommerceCloud/inline-agent-widget' &&
       ((github.event_name == 'workflow_dispatch' && inputs.live_chat) ||
@@ -67,5 +85,5 @@ jobs:
         with:
           name: zyss-health-sanitized
           path: e2e/sanitized-report
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: error

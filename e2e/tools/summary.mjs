@@ -1,38 +1,190 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-const completedStages = new Set(['WIDGET_RENDER', 'HANDOFF_SUBMITTED', 'DRAWER_OPEN', 'QUESTION_CONTEXT_SENT', 'MESSAGE_ACCEPTED', 'AGENT_REPLY_RECEIVED', 'REPLY_RENDERED', 'HANDSHAKE_CONTEXT_LABELS_VERIFIED']);
-export function summarize(report, source = 'unknown') {
+
+const healthSteps = {
+    WIDGET_RENDER: 'Load PDP and render the widget',
+    CONFIGURATION: 'Verify the saved shopper-agent mode',
+    HANDOFF_SUBMITTED: 'Submit one question through the widget',
+    DRAWER_OPEN: 'Open the shopper-agent drawer',
+    QUESTION_CONTEXT_SENT: 'Transmit one question with PDP context',
+    MESSAGE_ACCEPTED: 'Receive HTTP acceptance',
+    AGENT_REPLY_RECEIVED: 'Receive a correlated agent reply',
+    REPLY_RENDERED: 'Render the agent response',
+    HANDSHAKE_CONTEXT_LABELS_VERIFIED: 'Verify welcome order, named context and single delivery'
+};
+const layoutSteps = {
+    PDP_1_RENDER: 'Reference PDP 1: render widget',
+    PDP_1_METADATA_LAYOUT: 'Reference PDP 1: questions, metadata and placement',
+    PDP_2_RENDER: 'Reference PDP 2: render widget',
+    PDP_2_METADATA_LAYOUT: 'Reference PDP 2: questions, metadata and placement'
+};
+const projects = {
+    'storefront-readonly': { name: 'Deployed PDP rendering and placement', steps: layoutSteps },
+    'storefront-health': { name: 'Fresh-session handoff and agent availability', steps: healthSteps }
+};
+const failureCodes = new Set([
+    'PDP_HTTP',
+    'TARGET',
+    'STARTER_QUESTIONS',
+    'PLACEMENT',
+    'MESSAGE_SENT',
+    'CONTEXT_TRANSMISSION',
+    'AGENT_REPLY',
+    'COLD_HANDSHAKE',
+    'DELIVERY',
+    'CONTEXT_ACCEPTANCE',
+    ...Object.keys(healthSteps),
+    ...Object.keys(layoutSteps)
+]);
+const completedStages = new Set([
+    ...Object.keys(healthSteps),
+    ...Object.keys(layoutSteps),
+    'METADATA_QUESTIONS_PLACEMENT'
+]);
+const statuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
+const duration = (value) => (Number.isFinite(value) && value >= 0 && value <= 3600000 ? Math.round(value) : null);
+function attachment(result, name) {
+    const body = result?.attachments?.find((item) => item.name === name)?.body;
+    if (typeof body !== 'string' || body.length > 100000) return {};
+    try {
+        return JSON.parse(Buffer.from(body, 'base64').toString('utf8')) || {};
+    } catch {
+        return {};
+    }
+}
+function flatten(steps = []) {
+    return steps.flatMap((step) => [step, ...flatten(step.steps)]);
+}
+export function summarize(report, source = 'unknown', run = {}) {
+    report = report && typeof report === 'object' && !Array.isArray(report) ? report : { errors: [{}] };
     const tests = [];
-    const visit = (suites) => {
-        for (const suite of suites || []) {
+    const visit = (suites = []) => {
+        for (const suite of suites) {
             for (const spec of suite.specs || []) {
                 for (const test of spec.tests || []) {
+                    const project = Object.hasOwn(projects, test.projectName) ? test.projectName : 'unknown';
+                    const definition = projects[project] || { name: 'Unrecognized live check', steps: {} };
                     const result = test.results?.at(-1);
-                    const attachment = result?.attachments?.find((a) => a.name === 'sanitized-stages' && a.body);
-                    let stages = [];
-                    if (attachment) {
-                        const data = JSON.parse(Buffer.from(attachment.body, 'base64').toString('utf8'));
-                        stages = (data.stages || []).filter((s) => completedStages.has(s) || /^(WIDGET_RENDER|METADATA_QUESTIONS_PLACEMENT):[a-zA-Z0-9_-]+$/.test(s));
-                    }
-                    const allowed = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
-                    const failure = result?.error?.message?.match(/\b(PDP_HTTP|TARGET|CONFIGURATION|WIDGET_RENDER|STARTER_QUESTIONS|PLACEMENT|DRAWER_OPEN|MESSAGE_SENT|CONTEXT_TRANSMISSION|MESSAGE_ACCEPTED|AGENT_REPLY|REPLY_RENDERED|COLD_HANDSHAKE|DELIVERY|CONTEXT_ACCEPTANCE):/);
-                    const health = result?.attachments?.find((a) => a.name === 'sanitized-health' && a.body);
-                    const count = health ? JSON.parse(Buffer.from(health.body, 'base64').toString('utf8')).requestCount : undefined;
-                    tests.push({ project: test.projectName, status: allowed.has(result?.status) ? result.status : 'interrupted', stages,
-                        failureStage: result?.status === 'passed' ? null : failure?.[1] || 'UNKNOWN',
-                        requestCount: Number.isInteger(count) && count >= 0 && count <= 100 ? count : null });
+                    const status = statuses.has(result?.status) ? result.status : 'interrupted';
+                    const rawSteps = flatten(result?.steps);
+                    const steps = Object.entries(definition.steps).map(([id, name]) => {
+                        const step = rawSteps.find((item) => item.title === id);
+                        return {
+                            id,
+                            name,
+                            status: step
+                                ? step.error
+                                    ? 'failed'
+                                    : 'passed'
+                                : rawSteps.length
+                                  ? 'not-run'
+                                  : 'not-recorded',
+                            durationMs: step ? duration(step.duration) : null
+                        };
+                    });
+                    const codedFailure = result?.error?.message?.match(/\b([A-Z_0-9]+):/)?.[1];
+                    const failureStage =
+                        status === 'passed' || status === 'skipped'
+                            ? null
+                            : failureCodes.has(codedFailure)
+                              ? codedFailure
+                              : steps.find((step) => step.status === 'failed')?.id || 'UNKNOWN';
+                    const evidence = attachment(result, 'sanitized-stages');
+                    const count = attachment(result, 'sanitized-health').requestCount;
+                    const config = evidence.config || {};
+                    tests.push({
+                        project,
+                        name: definition.name,
+                        status,
+                        durationMs: duration(result?.duration),
+                        steps,
+                        failureStage,
+                        stages: Array.isArray(evidence.stages)
+                            ? evidence.stages
+                                  .map((s) => (typeof s === 'string' ? s.split(':')[0] : ''))
+                                  .filter((s) => completedStages.has(s))
+                            : [],
+                        requestCount: Number.isInteger(count) && count >= 0 && count <= 100 ? count : null,
+                        mode: ['inline', 'hybrid', 'shopper-agent'].includes(config.mode) ? config.mode : 'unknown',
+                        preWarm: typeof config.preWarm === 'boolean' ? config.preWarm : null
+                    });
                 }
             }
             visit(suite.suites);
         }
     };
     visit(report.suites);
-    return { source, target: /^[a-z0-9-]+$/.test(report.config?.metadata?.target || '') ? report.config.metadata.target : 'unknown', at: new Date().toISOString(), tests, passed: tests.length > 0 && tests.every((t) => t.status === 'passed') };
+    const start = typeof report.stats?.startTime === 'string' ? Date.parse(report.stats.startTime) : NaN;
+    const counts = { passed: 0, failed: 0, skipped: 0 };
+    for (const test of tests)
+        counts[test.status === 'passed' ? 'passed' : test.status === 'skipped' ? 'skipped' : 'failed']++;
+    const runId = /^\d{1,20}$/.test(run.id || '') ? run.id : null;
+    const attempt = /^\d{1,6}$/.test(run.attempt || '') ? run.attempt : null;
+    const runnerFailed = !!report.errors?.length;
+    return {
+        schemaVersion: 2,
+        source: /^(?:[a-f0-9]{7,40}|local)$/.test(source) ? source : 'unknown',
+        target: report.config?.metadata?.target === 'zyss-001' ? 'zyss-001' : 'configured-storefront',
+        at: Number.isFinite(start) ? new Date(start).toISOString() : null,
+        durationMs: duration(report.stats?.duration),
+        runId,
+        attempt,
+        runUrl: runId ? `https://github.com/SalesforceCommerceCloud/inline-agent-widget/actions/runs/${runId}` : null,
+        counts,
+        runnerFailed,
+        tests,
+        passed:
+            tests.length > 0 && !runnerFailed && tests.every((t) => t.status === 'passed' && t.project !== 'unknown')
+    };
+}
+const escape = (value) =>
+    String(value ?? 'Not available').replace(
+        /[&<>"']/g,
+        (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]
+    );
+const elapsed = (ms) => (ms === null ? 'Not available' : `${(ms / 1000).toFixed(2)} s`);
+export function renderHtml(data) {
+    const checks = data.tests
+        .map(
+            (
+                test
+            ) => `<section><h2>${escape(test.name)}</h2><p><strong>${escape(test.status)}</strong> · ${escape(elapsed(test.durationMs))} · ${escape(test.project)}</p>
+        <dl><dt>Failure stage</dt><dd>${escape(test.failureStage || (test.status === 'passed' ? 'None' : 'Not classified'))}</dd><dt>Questions observed</dt><dd>${escape(test.requestCount)}</dd><dt>Saved mode / pre-warm</dt><dd>${escape(test.mode)} / ${escape(test.preWarm === null ? null : String(test.preWarm))}</dd></dl>
+        <table><thead><tr><th>Check</th><th>Status</th><th>Duration</th></tr></thead><tbody>${test.steps.map((step) => `<tr><td>${escape(step.name)}</td><td>${escape(step.status)}</td><td>${escape(elapsed(step.durationMs))}</td></tr>`).join('')}</tbody></table>
+        ${test.failureStage ? '<p>Inspect the failed stage before authorizing another attempt. No automatic live-chat retries.</p>' : ''}</section>`
+        )
+        .join('');
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Embedded widget live checks</title><style>
+        body{font:16px system-ui,sans-serif;color:#203449;background:#f4f7fb;margin:0}main{max-width:1050px;margin:auto;padding:30px}h1{font-size:30px}h2{font-size:21px}section,.overview{background:white;border:1px solid #d6deea;border-radius:12px;padding:22px;margin:20px 0}.metrics{display:flex;gap:24px;flex-wrap:wrap}dt{font-weight:600}dd{margin:3px 0 12px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #e5eaf1}th{background:#f4f7fb}.notice{border-left:5px solid #bd8c25;padding-left:14px}code{overflow-wrap:anywhere}a{color:#075da5}@media(max-width:600px){main{padding:12px}section{padding:12px}th,td{padding:9px 4px}}
+        </style></head><body><main><h1>Embedded widget live checks</h1><p>Functionality and availability. Agent answer accuracy is not evaluated.</p>
+        <div class="overview"><h2>${data.passed ? 'Passed' : 'Not passed'}</h2><div class="metrics"><span>Passed: ${data.counts.passed}</span><span>Failed: ${data.counts.failed}</span><span>Skipped: ${data.counts.skipped}</span><span>Total: ${escape(elapsed(data.durationMs))}</span></div>
+        <p>Target: ${escape(data.target)} · Started: ${escape(data.at)}</p><p>Source: <code>${escape(data.source)}</code></p>
+        ${data.runUrl ? `<p><a href="${escape(data.runUrl)}">GitHub Actions run ${escape(data.runId)}</a> · Attempt ${escape(data.attempt)}</p>` : ''}</div>
+        ${data.runnerFailed ? '<p class="notice">Runner or report-generation failure. Test results may be incomplete; raw errors are intentionally excluded.</p>' : ''}
+        ${checks || '<p class="notice">No test results were recorded. This is not a successful health check.</p>'}
+        <p class="notice">Safe report: fixed check names, timings, statuses and allowlisted configuration only. No transcripts, raw errors, request bodies, tokens, browser storage, screenshots or traces. “Not run” stages were not reached. “Not recorded” means step evidence is unavailable, including older reports without named steps.</p></main></body></html>`;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    const data = summarize(JSON.parse(await readFile('test-results/results.json', 'utf8')), process.env.GITHUB_SHA || 'local');
+    let report;
+    try {
+        report = JSON.parse(await readFile('test-results/results.json', 'utf8'));
+        if (!report || typeof report !== 'object' || Array.isArray(report)) throw new Error('Invalid report');
+    } catch {
+        report = { errors: [{}] };
+        process.exitCode = 1;
+    }
+    const data = summarize(report, process.env.GITHUB_SHA || 'local', {
+        id: process.env.GITHUB_RUN_ID,
+        attempt: process.env.GITHUB_RUN_ATTEMPT
+    });
     await mkdir('sanitized-report', { recursive: true });
     await writeFile('sanitized-report/summary.json', JSON.stringify(data, null, 2));
-    const safe = JSON.stringify(data, null, 2).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    await writeFile('sanitized-report/index.html', '<!doctype html><html lang="en"><meta charset="utf-8"><title>Widget health</title><h1>Widget health</h1><pre>' + safe + '</pre></html>');
+    await writeFile('sanitized-report/index.html', renderHtml(data));
+    if (process.env.GITHUB_STEP_SUMMARY) {
+        await writeFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            `## Embedded widget live checks\n\n${data.passed ? 'Passed' : 'Not passed'}: ${data.counts.passed} passed, ${data.counts.failed} failed, ${data.counts.skipped} skipped.\n\nDownload **zyss-health-sanitized** for named stages, timings and failure classification. No chat content is included.\n`,
+            { flag: 'a' }
+        );
+    }
 }
