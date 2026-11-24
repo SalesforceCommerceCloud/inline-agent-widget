@@ -40,6 +40,30 @@
         placeholder attributes with your real Salesforce SCRT2 (Agentforce MIAW) values in
         <code>demo/index.html</code>, then reload.
       </p>
+      <!--
+        DEMO CONFIG — replace the placeholders below with your own org's values,
+        then reload (`npm run dev`). The three required identifiers come from your
+        Embedded Service (Messaging for In-App and Web) deployment in Salesforce
+        Setup. They are PUBLIC client identifiers — the same values Salesforce's
+        own embedded-messaging snippet exposes in the browser — not secrets:
+          • scrt2-url          the SCRT2 base URL, e.g.
+                                https://<instance>.salesforce-scrt.com
+          • org-id             your 15- or 18-char Salesforce Organization ID
+          • es-developer-name  the Embedded Service deployment's developer name
+        The placeholders below are not real, so the widget will fail to connect on
+        first send until you fill them in (open the browser console; the
+        `enable-logging` attribute traces the token → SSE → conversation handshake).
+
+        `persist-session` turns on localStorage-backed persistence so the
+        conversation survives reload / navigation. A stored session is reused
+        until the token's own JWT `exp` (set by the server at mint); an expired
+        token is refused and re-minted. With `enable-logging`, reload+send logs
+        "Restoring session for conversation …" (no token mint) on a hit, or
+        "persist: no restorable session …" before a fresh handshake.
+
+        Use the nav links below to switch between page types, or set the URL
+        param directly: ?pid= for PDP, ?cgid= for PLP, ?q= for SRP.
+      -->
       <nav class="nav">
         <a href="?pid=YOUR_PRODUCT_ID">PDP</a>
         <a href="?cgid=YOUR_CATEGORY_ID">PLP</a>
