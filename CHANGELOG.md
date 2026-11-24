@@ -4,9 +4,7 @@ The release version comes from `package.json`. Keep the newest dated entry first
 
 ## 0.5.3 — 2026-11-24
 
-- Add SRP pills rendering test to verify srpQuestions display on search results pages.
-- Update demo page to show all three widget variants (PDP, PLP, SRP) with page-specific attributes.
-- Seed category and search query URL params in demo for local dev testing.
+- Add SRP pills test and update demo page to show all three widget variants (PDP, PLP, SRP) with seeded URL params for local testing.
 
 ## 0.5.2 — 2026-11-19
 
