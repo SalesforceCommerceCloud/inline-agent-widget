@@ -75,15 +75,9 @@
       <div id="pdp-section" class="widget-section">
         <h2>PDP — Product Detail Page</h2>
         <inline-agent-widget
-          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-          org-id="YOUR_ORG_ID"
-          es-developer-name="YOUR_ES_DEVELOPER_NAME"
-          capabilities-version="66"
           page-type="pdp"
           product-id-param="pid"
           placeholder="Type a message…"
-          persist-session
-          enable-logging
           pre-warm
         ></inline-agent-widget>
       </div>
@@ -92,14 +86,9 @@
         <h2>PLP — Product Listing / Category Page</h2>
         <inline-agent-widget
           id="plp-widget"
-          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-          org-id="YOUR_ORG_ID"
-          es-developer-name="YOUR_ES_DEVELOPER_NAME"
-          capabilities-version="66"
           page-type="plp"
           category-name="YOUR_CATEGORY_NAME"
           placeholder="Ask about this category…"
-          enable-logging
         ></inline-agent-widget>
       </div>
 
@@ -107,19 +96,29 @@
         <h2>SRP — Search Results Page</h2>
         <inline-agent-widget
           id="srp-widget"
-          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-          org-id="YOUR_ORG_ID"
-          es-developer-name="YOUR_ES_DEVELOPER_NAME"
-          capabilities-version="66"
           page-type="srp"
           placeholder="Ask about these results…"
-          enable-logging
         ></inline-agent-widget>
       </div>
     </div>
 
     <script>
-      const params = new URLSearchParams(window.location.search);
+      var SHARED_CONFIG = {
+        "scrt2-url": "https://YOUR_INSTANCE.salesforce-scrt.com",
+        "org-id": "YOUR_ORG_ID",
+        "es-developer-name": "YOUR_ES_DEVELOPER_NAME",
+        "capabilities-version": "66",
+      };
+
+      document.querySelectorAll("inline-agent-widget").forEach(function (widget) {
+        for (var key in SHARED_CONFIG) {
+          widget.setAttribute(key, SHARED_CONFIG[key]);
+        }
+        widget.setAttribute("enable-logging", "");
+        widget.setAttribute("persist-session", "");
+      });
+
+      var params = new URLSearchParams(window.location.search);
 
       if (params.has("cgid")) {
         document.getElementById("plp-section").classList.add("active");
@@ -129,7 +128,7 @@
         document.getElementById("srp-widget").setAttribute("search-query", params.get("q"));
       } else {
         if (!params.has("pid")) {
-          const url = new URL(window.location.href);
+          var url = new URL(window.location.href);
           url.searchParams.set("pid", "YOUR_PRODUCT_ID");
           window.history.replaceState(null, "", url);
         }
