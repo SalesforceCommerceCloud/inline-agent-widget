@@ -1,0 +1,53 @@
+name: Live widget storefront check
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      live_chat:
+        description: Submit one anonymous question to zyss-001
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: widget-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live-health:
+    name: Live storefront check (explicit opt-in)
+    if: >-
+      github.repository == 'SalesforceCommerceCloud/inline-agent-widget' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.live_chat) ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+      github.event.label.name == 'run-zyss-live-health' &&
+      github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci --prefix e2e
+      - run: cd e2e && npx playwright install --with-deps chromium
+      - run: cd e2e && WIDGET_LIVE_CHAT=1 npx playwright test --project=storefront-readonly --project=storefront-health
+      - name: Generate sanitized health report
+        if: always()
+        working-directory: e2e
+        run: node tools/summary.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: zyss-health-sanitized
+          path: e2e/sanitized-report
+          retention-days: 14
+          if-no-files-found: error

@@ -22,7 +22,9 @@ The default profile is zyss-001 / NTO. `WIDGET_TARGET_FILE` accepts a JSON profi
 
 ## Actions
 
-PRs run controlled regression only. To request one live proof before merge, apply `run-zyss-live-health` to a same-repository PR. Only the label-add event triggers live chat; later pushes do not. After the workflow reaches main, manual dispatch with `live_chat=true` is available. There is no schedule and no S3/UIP publishing in this phase.
+**Shared widget browser merge check** runs Chromium for changes to the widget source, build inputs, E2E suite or browser workflow. Other changes report out of scope without browser setup.
+
+To request one live proof before merge, apply `run-zyss-live-health` to a same-repository PR. Only the label-add event triggers live chat; later pushes do not. After the workflow reaches main, manual dispatch with `live_chat=true` is available. There is no schedule and no S3/UIP publishing in this phase.
 
 The live job disables screenshots, traces and video. It uploads only the allowlisted status/stage summary and corresponding HTML; it never uploads the full Playwright report, transcripts, browser storage or raw network payloads. GitHub artifact access follows repository visibility; this summary deliberately contains no chat content. Controlled fixture reports may contain synthetic data. Source commit and observed deployed asset versions are distinct; a passing fixture does not prove deployment.
 
