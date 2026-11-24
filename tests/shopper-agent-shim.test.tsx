@@ -221,7 +221,7 @@ describe("ShopperAgentShim", () => {
     expect(screen.queryByRole("button", { name: "Should not appear" })).toBeNull();
   });
 
-  it("renders no pills on SRP page", () => {
+  it("renders no pills on SRP page when srpQuestions is empty", () => {
     render(
       <ShopperAgentShim
         config={{
@@ -233,6 +233,23 @@ describe("ShopperAgentShim", () => {
       />,
     );
     expect(screen.queryByRole("list", { name: "Suggested questions" })).toBeNull();
+  });
+
+  it("renders srpQuestions as pills on an SRP page", () => {
+    render(
+      <ShopperAgentShim
+        config={{
+          ...BASE_CONFIG,
+          pageType: "srp",
+          searchQuery: "waterproof jackets",
+          srpQuestions: ["Any deals?", "Top rated?"],
+          pdpQuestions: ["Should not appear"],
+        }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Any deals?" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Top rated?" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Should not appear" })).toBeNull();
   });
 
   it("uses PLP placeholder when no productName", () => {

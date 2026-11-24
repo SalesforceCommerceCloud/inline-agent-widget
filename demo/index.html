@@ -19,6 +19,12 @@
       h1 {
         font-size: 20px;
       }
+      h2 {
+        font-size: 16px;
+        margin-top: 32px;
+        border-top: 1px solid #ddd;
+        padding-top: 16px;
+      }
       p {
         color: #555;
         line-height: 1.6;
@@ -34,65 +40,95 @@
     <div class="page">
       <h1>inline-agent-widget — inline demo</h1>
       <p>
-        The widget below is an always-visible inline block (not a floating popup). Replace the
-        placeholder attributes with your real Salesforce SCRT2 (Agentforce MIAW) values in
-        <code>demo/index.html</code>, then reload.
+        Replace the placeholder attributes with your real Salesforce SCRT2
+        (Agentforce MIAW) values in <code>demo/index.html</code>, then reload
+        (<code>npm run dev</code>). The three required identifiers
+        (<code>scrt2-url</code>, <code>org-id</code>,
+        <code>es-developer-name</code>) come from your Embedded Service
+        deployment in Salesforce Setup.
       </p>
 
       <!--
-        Custom-element usage. On any page that has loaded the bundle, this tag
-        upgrades itself — no JS call required. In production you would load the
-        self-contained UMD bundle from a CDN instead of the dev module below:
-
-          <script src="https://unpkg.com/inline-agent-widget"></script>
+        SHARED CONFIG NOTE:
+        scrt2-url, org-id, and es-developer-name are repeated on each widget
+        because each <inline-agent-widget> is an independent custom element
+        with its own shadow root and SCRT2 session. All other attributes are
+        widget-specific.
       -->
-      <!--
-        DEMO CONFIG — replace the placeholders below with your own org's values,
-        then reload (`npm run dev`). The three required identifiers come from your
-        Embedded Service (Messaging for In-App and Web) deployment in Salesforce
-        Setup. They are PUBLIC client identifiers — the same values Salesforce's
-        own embedded-messaging snippet exposes in the browser — not secrets:
-          • scrt2-url          the SCRT2 base URL, e.g.
-                                https://<instance>.salesforce-scrt.com
-          • org-id             your 15- or 18-char Salesforce Organization ID
-          • es-developer-name  the Embedded Service deployment's developer name
-        The placeholders below are not real, so the widget will fail to connect on
-        first send until you fill them in (open the browser console; the
-        `enable-logging` attribute traces the token → SSE → conversation handshake).
 
-        `persist-session` turns on localStorage-backed persistence so the
-        conversation survives reload / navigation. A stored session is reused
-        until the token's own JWT `exp` (set by the server at mint); an expired
-        token is refused and re-minted. With `enable-logging`, reload+send logs
-        "Restoring session for conversation …" (no token mint) on a hit, or
-        "persist: no restorable session …" before a fresh handshake.
-      -->
+      <!-- ════════════════════════════════════════════════════════════════ -->
+      <h2>PDP — Product Detail Page</h2>
+      <p>
+        Product context is read from the URL query param <code>pid</code>
+        (seeded by the script at the bottom). Replace
+        <code>YOUR_PRODUCT_ID</code> with a real catalog id.
+      </p>
       <inline-agent-widget
         scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
         org-id="YOUR_ORG_ID"
         es-developer-name="YOUR_ES_DEVELOPER_NAME"
         capabilities-version="66"
+        page-type="pdp"
         product-id-param="pid"
-        placeholder="Type a message…"
+        product-name="Classic Trucker Jacket"
+        pdp-questions='["Is it waterproof?","Does it fit kids?","What sizes are available?"]'
+        placeholder="Ask about this product…"
         persist-session
         enable-logging
         pre-warm
       ></inline-agent-widget>
+
+      <!-- ════════════════════════════════════════════════════════════════ -->
+      <h2>PLP — Product Listing / Category Page</h2>
+      <p>
+        Category context is passed directly via attributes. The storefront sets
+        <code>category-id</code>, <code>category-name</code>, and optionally
+        <code>category-description</code> and <code>category-questions</code>
+        from the category object.
+      </p>
+      <inline-agent-widget
+        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+        org-id="YOUR_ORG_ID"
+        es-developer-name="YOUR_ES_DEVELOPER_NAME"
+        capabilities-version="66"
+        page-type="plp"
+        category-id="mens-clothing-jackets"
+        category-name="Men's Jackets"
+        category-description="Explore our collection of men's jackets for every season."
+        category-questions='["What is on sale?","Most popular?","Any waterproof options?"]'
+        placeholder="Ask about this category…"
+        enable-logging
+      ></inline-agent-widget>
+
+      <!-- ════════════════════════════════════════════════════════════════ -->
+      <h2>SRP — Search Results Page</h2>
+      <p>
+        Search context is passed via <code>search-query</code>. The storefront
+        reads it from the URL search param (e.g. <code>?q=waterproof+jackets</code>)
+        and passes it through.
+      </p>
+      <inline-agent-widget
+        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+        org-id="YOUR_ORG_ID"
+        es-developer-name="YOUR_ES_DEVELOPER_NAME"
+        capabilities-version="66"
+        page-type="srp"
+        search-query="waterproof jackets"
+        search-questions='["Any deals?","Top rated?","Under $100?"]'
+        placeholder="Ask about these results…"
+        enable-logging
+      ></inline-agent-widget>
     </div>
 
     <!--
-      Dev: import the source entry so `npm run dev` gives live TypeScript + HMR.
-      Importing the module runs defineElement() as a side effect, which registers
-      <inline-agent-widget>.
-    -->
-    <!--
-      Demo-only: seed a `pid` query param so `product-id-param="pid"` above has a
-      value to read, exercising the PDP product-context path. Replace the
-      PLACEHOLDER id with a real product id from your catalog.
+      Demo-only: seed a `pid` query param so the PDP widget's
+      product-id-param="pid" has a value to read.
     -->
     <script>
       const demoUrl = new URL(window.location.href);
-      demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
+      if (!demoUrl.searchParams.has("pid")) demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
+      if (!demoUrl.searchParams.has("cgid")) demoUrl.searchParams.set("cgid", "mens-clothing-jackets");
+      if (!demoUrl.searchParams.has("q")) demoUrl.searchParams.set("q", "waterproof jackets");
       window.history.replaceState(null, "", demoUrl);
     </script>
     <script type="module" src="/src/index.ts"></script>
