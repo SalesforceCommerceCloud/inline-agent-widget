@@ -64,9 +64,7 @@
             capabilities-version="66"
             page-type="plp"
             category-id="${params.get("cgid")}"
-            category-name="Men's Jackets"
-            category-description="Explore our collection of men's jackets for every season."
-            category-questions='["What is on sale?","Most popular?","Any waterproof options?"]'
+            category-name="YOUR_CATEGORY_NAME"
             placeholder="Ask about this category…"
             enable-logging
           ></inline-agent-widget>`;
@@ -81,7 +79,6 @@
             capabilities-version="66"
             page-type="srp"
             search-query="${params.get("q")}"
-            search-questions='["Any deals?","Top rated?","Under $100?"]'
             placeholder="Ask about these results…"
             enable-logging
           ></inline-agent-widget>`;
@@ -102,9 +99,7 @@
             capabilities-version="66"
             page-type="pdp"
             product-id-param="pid"
-            product-name="Classic Trucker Jacket"
-            pdp-questions='["Is it waterproof?","Does it fit kids?","What sizes are available?"]'
-            placeholder="Ask about this product…"
+            placeholder="Type a message…"
             persist-session
             enable-logging
             pre-warm
