@@ -28,6 +28,8 @@
         padding: 1px 5px;
         border-radius: 4px;
       }
+      .nav { margin: 16px 0; }
+      .nav a { margin-right: 12px; }
     </style>
   </head>
   <body>
@@ -38,89 +40,76 @@
         placeholder attributes with your real Salesforce SCRT2 (Agentforce MIAW) values in
         <code>demo/index.html</code>, then reload.
       </p>
+      <nav class="nav">
+        <a href="?pid=YOUR_PRODUCT_ID">PDP</a>
+        <a href="?cgid=mens-clothing-jackets">PLP</a>
+        <a href="?q=waterproof+jackets">SRP</a>
+      </nav>
 
-      <!--
-        SHARED CONFIG NOTE:
-        scrt2-url, org-id, and es-developer-name are repeated on each widget
-        because each <inline-agent-widget> is an independent custom element
-        with its own shadow root and SCRT2 session. All other attributes are
-        widget-specific.
-      -->
-
-      <!-- ════════════════════════════════════════════════════════════════ -->
-      <h2>PDP — Product Detail Page</h2>
-      <p>
-        Product context is read from the URL query param <code>pid</code>
-        (seeded by the script at the bottom). Replace
-        <code>YOUR_PRODUCT_ID</code> with a real catalog id.
-      </p>
-      <inline-agent-widget
-        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-        org-id="YOUR_ORG_ID"
-        es-developer-name="YOUR_ES_DEVELOPER_NAME"
-        capabilities-version="66"
-        page-type="pdp"
-        product-id-param="pid"
-        product-name="Classic Trucker Jacket"
-        pdp-questions='["Is it waterproof?","Does it fit kids?","What sizes are available?"]'
-        placeholder="Ask about this product…"
-        persist-session
-        enable-logging
-        pre-warm
-      ></inline-agent-widget>
-
-      <!-- ════════════════════════════════════════════════════════════════ -->
-      <h2>PLP — Product Listing / Category Page</h2>
-      <p>
-        Category context is passed directly via attributes. The storefront sets
-        <code>category-id</code>, <code>category-name</code>, and optionally
-        <code>category-description</code> and <code>category-questions</code>
-        from the category object.
-      </p>
-      <inline-agent-widget
-        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-        org-id="YOUR_ORG_ID"
-        es-developer-name="YOUR_ES_DEVELOPER_NAME"
-        capabilities-version="66"
-        page-type="plp"
-        category-id="mens-clothing-jackets"
-        category-name="Men's Jackets"
-        category-description="Explore our collection of men's jackets for every season."
-        category-questions='["What is on sale?","Most popular?","Any waterproof options?"]'
-        placeholder="Ask about this category…"
-        enable-logging
-      ></inline-agent-widget>
-
-      <!-- ════════════════════════════════════════════════════════════════ -->
-      <h2>SRP — Search Results Page</h2>
-      <p>
-        Search context is passed via <code>search-query</code>. The storefront
-        reads it from the URL search param (e.g. <code>?q=waterproof+jackets</code>)
-        and passes it through.
-      </p>
-      <inline-agent-widget
-        scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-        org-id="YOUR_ORG_ID"
-        es-developer-name="YOUR_ES_DEVELOPER_NAME"
-        capabilities-version="66"
-        page-type="srp"
-        search-query="waterproof jackets"
-        search-questions='["Any deals?","Top rated?","Under $100?"]'
-        placeholder="Ask about these results…"
-        enable-logging
-      ></inline-agent-widget>
+      <div id="widget-slot"></div>
     </div>
 
-    <!--
-      Demo-only: seed a `pid` query param so the PDP widget's
-      product-id-param="pid" has a value to read.
-    -->
     <script>
-      const demoUrl = new URL(window.location.href);
-      if (!demoUrl.searchParams.has("pid")) demoUrl.searchParams.set("pid", "YOUR_PRODUCT_ID");
-      if (!demoUrl.searchParams.has("cgid")) demoUrl.searchParams.set("cgid", "mens-clothing-jackets");
-      if (!demoUrl.searchParams.has("q")) demoUrl.searchParams.set("q", "waterproof jackets");
-      window.history.replaceState(null, "", demoUrl);
+      const params = new URLSearchParams(window.location.search);
+      const slot = document.getElementById("widget-slot");
+
+      if (params.has("cgid")) {
+        slot.innerHTML = `
+          <h2>PLP — Product Listing / Category Page</h2>
+          <p>Category: <code>${params.get("cgid")}</code></p>
+          <inline-agent-widget
+            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+            org-id="YOUR_ORG_ID"
+            es-developer-name="YOUR_ES_DEVELOPER_NAME"
+            capabilities-version="66"
+            page-type="plp"
+            category-id="${params.get("cgid")}"
+            category-name="Men's Jackets"
+            category-description="Explore our collection of men's jackets for every season."
+            category-questions='["What is on sale?","Most popular?","Any waterproof options?"]'
+            placeholder="Ask about this category…"
+            enable-logging
+          ></inline-agent-widget>`;
+      } else if (params.has("q")) {
+        slot.innerHTML = `
+          <h2>SRP — Search Results Page</h2>
+          <p>Search query: <code>${params.get("q")}</code></p>
+          <inline-agent-widget
+            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+            org-id="YOUR_ORG_ID"
+            es-developer-name="YOUR_ES_DEVELOPER_NAME"
+            capabilities-version="66"
+            page-type="srp"
+            search-query="${params.get("q")}"
+            search-questions='["Any deals?","Top rated?","Under $100?"]'
+            placeholder="Ask about these results…"
+            enable-logging
+          ></inline-agent-widget>`;
+      } else {
+        const pid = params.get("pid") || "YOUR_PRODUCT_ID";
+        if (!params.has("pid")) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("pid", pid);
+          window.history.replaceState(null, "", url);
+        }
+        slot.innerHTML = `
+          <h2>PDP — Product Detail Page</h2>
+          <p>Product ID: <code>${pid}</code></p>
+          <inline-agent-widget
+            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+            org-id="YOUR_ORG_ID"
+            es-developer-name="YOUR_ES_DEVELOPER_NAME"
+            capabilities-version="66"
+            page-type="pdp"
+            product-id-param="pid"
+            product-name="Classic Trucker Jacket"
+            pdp-questions='["Is it waterproof?","Does it fit kids?","What sizes are available?"]'
+            placeholder="Ask about this product…"
+            persist-session
+            enable-logging
+            pre-warm
+          ></inline-agent-widget>`;
+      }
     </script>
     <script type="module" src="/src/index.ts"></script>
   </body>
