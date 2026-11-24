@@ -78,6 +78,8 @@
           page-type="pdp"
           product-id-param="pid"
           placeholder="Type a message…"
+          persist-session
+          enable-logging
           pre-warm
         ></inline-agent-widget>
       </div>
@@ -89,6 +91,9 @@
           page-type="plp"
           category-name="YOUR_CATEGORY_NAME"
           placeholder="Ask about this category…"
+          persist-session
+          enable-logging
+          pre-warm
         ></inline-agent-widget>
       </div>
 
@@ -98,6 +103,9 @@
           id="srp-widget"
           page-type="srp"
           placeholder="Ask about these results…"
+          persist-session
+          enable-logging
+          pre-warm
         ></inline-agent-widget>
       </div>
     </div>
@@ -114,8 +122,6 @@
         for (var key in SHARED_CONFIG) {
           widget.setAttribute(key, SHARED_CONFIG[key]);
         }
-        widget.setAttribute("enable-logging", "");
-        widget.setAttribute("persist-session", "");
       });
 
       var params = new URLSearchParams(window.location.search);
