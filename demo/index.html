@@ -30,6 +30,8 @@
       }
       .nav { margin: 16px 0; }
       .nav a { margin-right: 12px; }
+      .widget-section { display: none; }
+      .widget-section.active { display: block; }
     </style>
   </head>
   <body>
@@ -70,61 +72,68 @@
         <a href="?q=YOUR_SEARCH_QUERY">SRP</a>
       </nav>
 
-      <div id="widget-slot"></div>
+      <div id="pdp-section" class="widget-section">
+        <h2>PDP — Product Detail Page</h2>
+        <inline-agent-widget
+          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+          org-id="YOUR_ORG_ID"
+          es-developer-name="YOUR_ES_DEVELOPER_NAME"
+          capabilities-version="66"
+          page-type="pdp"
+          product-id-param="pid"
+          placeholder="Type a message…"
+          persist-session
+          enable-logging
+          pre-warm
+        ></inline-agent-widget>
+      </div>
+
+      <div id="plp-section" class="widget-section">
+        <h2>PLP — Product Listing / Category Page</h2>
+        <inline-agent-widget
+          id="plp-widget"
+          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+          org-id="YOUR_ORG_ID"
+          es-developer-name="YOUR_ES_DEVELOPER_NAME"
+          capabilities-version="66"
+          page-type="plp"
+          category-name="YOUR_CATEGORY_NAME"
+          placeholder="Ask about this category…"
+          enable-logging
+        ></inline-agent-widget>
+      </div>
+
+      <div id="srp-section" class="widget-section">
+        <h2>SRP — Search Results Page</h2>
+        <inline-agent-widget
+          id="srp-widget"
+          scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
+          org-id="YOUR_ORG_ID"
+          es-developer-name="YOUR_ES_DEVELOPER_NAME"
+          capabilities-version="66"
+          page-type="srp"
+          placeholder="Ask about these results…"
+          enable-logging
+        ></inline-agent-widget>
+      </div>
     </div>
 
     <script>
       const params = new URLSearchParams(window.location.search);
-      const slot = document.getElementById("widget-slot");
-
-      function createWidget(attrs) {
-        const heading = document.createElement("h2");
-        heading.textContent = attrs._heading;
-        slot.appendChild(heading);
-
-        const widget = document.createElement("inline-agent-widget");
-        widget.setAttribute("scrt2-url", "https://YOUR_INSTANCE.salesforce-scrt.com");
-        widget.setAttribute("org-id", "YOUR_ORG_ID");
-        widget.setAttribute("es-developer-name", "YOUR_ES_DEVELOPER_NAME");
-        widget.setAttribute("capabilities-version", "66");
-        widget.setAttribute("enable-logging", "");
-        for (const [key, value] of Object.entries(attrs)) {
-          if (key === "_heading") continue;
-          widget.setAttribute(key, value);
-        }
-        slot.appendChild(widget);
-      }
 
       if (params.has("cgid")) {
-        createWidget({
-          _heading: "PLP — Product Listing / Category Page",
-          "page-type": "plp",
-          "category-id": params.get("cgid"),
-          "category-name": "YOUR_CATEGORY_NAME",
-          "placeholder": "Ask about this category…",
-        });
+        document.getElementById("plp-section").classList.add("active");
+        document.getElementById("plp-widget").setAttribute("category-id", params.get("cgid"));
       } else if (params.has("q")) {
-        createWidget({
-          _heading: "SRP — Search Results Page",
-          "page-type": "srp",
-          "search-query": params.get("q"),
-          "placeholder": "Ask about these results…",
-        });
+        document.getElementById("srp-section").classList.add("active");
+        document.getElementById("srp-widget").setAttribute("search-query", params.get("q"));
       } else {
-        const pid = params.get("pid") || "YOUR_PRODUCT_ID";
         if (!params.has("pid")) {
           const url = new URL(window.location.href);
-          url.searchParams.set("pid", pid);
+          url.searchParams.set("pid", "YOUR_PRODUCT_ID");
           window.history.replaceState(null, "", url);
         }
-        createWidget({
-          _heading: "PDP — Product Detail Page",
-          "page-type": "pdp",
-          "product-id-param": "pid",
-          "placeholder": "Type a message…",
-          "persist-session": "",
-          "pre-warm": "",
-        });
+        document.getElementById("pdp-section").classList.add("active");
       }
     </script>
     <script type="module" src="/src/index.ts"></script>
