@@ -53,33 +53,39 @@
       const params = new URLSearchParams(window.location.search);
       const slot = document.getElementById("widget-slot");
 
+      function createWidget(attrs) {
+        const heading = document.createElement("h2");
+        heading.textContent = attrs._heading;
+        slot.appendChild(heading);
+
+        const widget = document.createElement("inline-agent-widget");
+        widget.setAttribute("scrt2-url", "https://YOUR_INSTANCE.salesforce-scrt.com");
+        widget.setAttribute("org-id", "YOUR_ORG_ID");
+        widget.setAttribute("es-developer-name", "YOUR_ES_DEVELOPER_NAME");
+        widget.setAttribute("capabilities-version", "66");
+        widget.setAttribute("enable-logging", "");
+        for (const [key, value] of Object.entries(attrs)) {
+          if (key === "_heading") continue;
+          widget.setAttribute(key, value);
+        }
+        slot.appendChild(widget);
+      }
+
       if (params.has("cgid")) {
-        slot.innerHTML = `
-          <h2>PLP — Product Listing / Category Page</h2>
-          <inline-agent-widget
-            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-            org-id="YOUR_ORG_ID"
-            es-developer-name="YOUR_ES_DEVELOPER_NAME"
-            capabilities-version="66"
-            page-type="plp"
-            category-id="${params.get("cgid")}"
-            category-name="YOUR_CATEGORY_NAME"
-            placeholder="Ask about this category…"
-            enable-logging
-          ></inline-agent-widget>`;
+        createWidget({
+          _heading: "PLP — Product Listing / Category Page",
+          "page-type": "plp",
+          "category-id": params.get("cgid"),
+          "category-name": "YOUR_CATEGORY_NAME",
+          "placeholder": "Ask about this category…",
+        });
       } else if (params.has("q")) {
-        slot.innerHTML = `
-          <h2>SRP — Search Results Page</h2>
-          <inline-agent-widget
-            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-            org-id="YOUR_ORG_ID"
-            es-developer-name="YOUR_ES_DEVELOPER_NAME"
-            capabilities-version="66"
-            page-type="srp"
-            search-query="${params.get("q")}"
-            placeholder="Ask about these results…"
-            enable-logging
-          ></inline-agent-widget>`;
+        createWidget({
+          _heading: "SRP — Search Results Page",
+          "page-type": "srp",
+          "search-query": params.get("q"),
+          "placeholder": "Ask about these results…",
+        });
       } else {
         const pid = params.get("pid") || "YOUR_PRODUCT_ID";
         if (!params.has("pid")) {
@@ -87,20 +93,14 @@
           url.searchParams.set("pid", pid);
           window.history.replaceState(null, "", url);
         }
-        slot.innerHTML = `
-          <h2>PDP — Product Detail Page</h2>
-          <inline-agent-widget
-            scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
-            org-id="YOUR_ORG_ID"
-            es-developer-name="YOUR_ES_DEVELOPER_NAME"
-            capabilities-version="66"
-            page-type="pdp"
-            product-id-param="pid"
-            placeholder="Type a message…"
-            persist-session
-            enable-logging
-            pre-warm
-          ></inline-agent-widget>`;
+        createWidget({
+          _heading: "PDP — Product Detail Page",
+          "page-type": "pdp",
+          "product-id-param": "pid",
+          "placeholder": "Type a message…",
+          "persist-session": "",
+          "pre-warm": "",
+        });
       }
     </script>
     <script type="module" src="/src/index.ts"></script>
