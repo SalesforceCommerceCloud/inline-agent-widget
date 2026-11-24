@@ -56,7 +56,6 @@
       if (params.has("cgid")) {
         slot.innerHTML = `
           <h2>PLP — Product Listing / Category Page</h2>
-          <p>Category: <code>${params.get("cgid")}</code></p>
           <inline-agent-widget
             scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
             org-id="YOUR_ORG_ID"
@@ -71,7 +70,6 @@
       } else if (params.has("q")) {
         slot.innerHTML = `
           <h2>SRP — Search Results Page</h2>
-          <p>Search query: <code>${params.get("q")}</code></p>
           <inline-agent-widget
             scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
             org-id="YOUR_ORG_ID"
@@ -91,7 +89,6 @@
         }
         slot.innerHTML = `
           <h2>PDP — Product Detail Page</h2>
-          <p>Product ID: <code>${pid}</code></p>
           <inline-agent-widget
             scrt2-url="https://YOUR_INSTANCE.salesforce-scrt.com"
             org-id="YOUR_ORG_ID"
