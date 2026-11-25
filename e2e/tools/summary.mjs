@@ -29,17 +29,20 @@ const pillFollowupSteps = {
     FOLLOWUP_REPLY_RENDERED: 'Render the new follow-up reply',
     TWO_MESSAGE_SESSION_VERIFIED: 'Verify exactly two messages in the original PDP session'
 };
-const layoutSteps = {
-    PDP_1_RENDER: 'Reference PDP 1: render widget',
-    PDP_1_METADATA_LAYOUT: 'Reference PDP 1: questions, metadata and placement',
-    PDP_2_RENDER: 'Reference PDP 2: render widget',
-    PDP_2_METADATA_LAYOUT: 'Reference PDP 2: questions, metadata and placement'
-};
+function layoutSteps(count) {
+    const steps = {};
+    for (let index = 1; index <= count; index++) {
+        steps[`PDP_${index}_RENDER`] = `Reference PDP ${index}: render widget`;
+        steps[`PDP_${index}_METADATA_LAYOUT`] = `Reference PDP ${index}: questions, metadata and placement`;
+    }
+    return steps;
+}
 const projects = {
-    'storefront-readonly': { name: 'Deployed PDP rendering and placement', steps: layoutSteps },
+    'storefront-readonly': { name: 'Deployed PDP rendering and placement' },
     'storefront-health': { name: 'Fresh-session handoff and agent availability', steps: healthSteps },
     'storefront-pill-followup': { name: 'Starter pill and same-session follow-up', steps: pillFollowupSteps }
 };
+const chatProjects = { typed: 'storefront-health', 'pill-followup': 'storefront-pill-followup' };
 const failureCodes = new Set([
     'PDP_HTTP',
     'TARGET',
@@ -53,13 +56,11 @@ const failureCodes = new Set([
     'SAME_SESSION',
     'CONTEXT_ACCEPTANCE',
     ...Object.keys(healthSteps),
-    ...Object.keys(pillFollowupSteps),
-    ...Object.keys(layoutSteps)
+    ...Object.keys(pillFollowupSteps)
 ]);
 const completedStages = new Set([
     ...Object.keys(healthSteps),
     ...Object.keys(pillFollowupSteps),
-    ...Object.keys(layoutSteps),
     'METADATA_QUESTIONS_PLACEMENT'
 ]);
 const statuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
@@ -78,6 +79,11 @@ function flatten(steps = []) {
 }
 export function summarize(report, source = 'unknown', run = {}) {
     report = report && typeof report === 'object' && !Array.isArray(report) ? report : { errors: [{}] };
+    const metadata = report.config?.metadata;
+    const referenceCount = metadata?.referencePdpCount;
+    const readOnlySteps = layoutSteps(
+        Number.isInteger(referenceCount) && referenceCount >= 2 ? Math.min(referenceCount, 100) : 2
+    );
     const tests = [];
     const visit = (suites = []) => {
         for (const suite of suites) {
@@ -88,7 +94,8 @@ export function summarize(report, source = 'unknown', run = {}) {
                     const result = test.results?.at(-1);
                     const status = statuses.has(result?.status) ? result.status : 'interrupted';
                     const rawSteps = flatten(result?.steps);
-                    const steps = Object.entries(definition.steps).map(([id, name]) => {
+                    const labels = project === 'storefront-readonly' ? readOnlySteps : definition.steps;
+                    const steps = Object.entries(labels).map(([id, name]) => {
                         const step = rawSteps.find((item) => item.title === id);
                         return {
                             id,
@@ -123,7 +130,7 @@ export function summarize(report, source = 'unknown', run = {}) {
                         stages: Array.isArray(evidence.stages)
                             ? evidence.stages
                                   .map((s) => (typeof s === 'string' ? s.split(':')[0] : ''))
-                                  .filter((s) => completedStages.has(s))
+                                  .filter((s) => completedStages.has(s) || Object.hasOwn(readOnlySteps, s))
                             : [],
                         requestCount: Number.isInteger(count) && count >= 0 && count <= 100 ? count : null,
                         mode: ['inline', 'hybrid', 'shopper-agent'].includes(config.mode) ? config.mode : 'unknown',
@@ -141,11 +148,20 @@ export function summarize(report, source = 'unknown', run = {}) {
         counts[test.status === 'passed' ? 'passed' : test.status === 'skipped' ? 'skipped' : 'failed']++;
     const runId = /^\d{1,20}$/.test(run.id || '') ? run.id : null;
     const attempt = /^\d{1,6}$/.test(run.attempt || '') ? run.attempt : null;
-    const runnerFailed = !!report.errors?.length;
+    const expected = ['storefront-readonly', chatProjects[run.scenario]];
+    const missingProjects =
+        run.scenario !== undefined &&
+        (!Object.hasOwn(chatProjects, run.scenario) ||
+            tests.length !== expected.length ||
+            expected.some((project) => !tests.some((test) => test.project === project)));
+    const runnerFailed = !!report.errors?.length || missingProjects;
     return {
         schemaVersion: 2,
         source: /^(?:[a-f0-9]{7,40}|local)$/.test(source) ? source : 'unknown',
-        target: report.config?.metadata?.target === 'zyss-001' ? 'zyss-001' : 'configured-storefront',
+        target:
+            typeof metadata?.target === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(metadata.target)
+                ? metadata.target
+                : 'configured-storefront',
         at: Number.isFinite(start) ? new Date(start).toISOString() : null,
         durationMs: duration(report.stats?.duration),
         runId,
@@ -196,8 +212,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
     const data = summarize(report, process.env.GITHUB_SHA || 'local', {
         id: process.env.GITHUB_RUN_ID,
-        attempt: process.env.GITHUB_RUN_ATTEMPT
+        attempt: process.env.GITHUB_RUN_ATTEMPT,
+        scenario: process.env.LIVE_SCENARIO
     });
+    if (!data.passed) process.exitCode = 1;
     await mkdir('sanitized-report', { recursive: true });
     await writeFile('sanitized-report/summary.json', JSON.stringify(data, null, 2));
     await writeFile('sanitized-report/index.html', renderHtml(data));

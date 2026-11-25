@@ -24,6 +24,40 @@ export async function evidence(page: Page, info: TestInfo, stages: string[]) {
         contentType: 'application/json'
     });
 }
+export async function limitMessageSends(page: Page, max: number) {
+    let expected = '';
+    const counts = { forwarded: 0, blocked: 0 };
+    await page.route(
+        (url) => /\/conversation\/[^/]+\/message$/.test(url.pathname),
+        async (route) => {
+            const request = route.request();
+            if (request.method() !== 'POST') {
+                await route.fallback();
+                return;
+            }
+
+            let text: unknown;
+            try {
+                text = request.postDataJSON()?.message?.staticContent?.text;
+            } catch {}
+            if (!expected || text !== expected || counts.forwarded >= max) {
+                counts.blocked++;
+                await route.abort('blockedbyclient');
+                return;
+            }
+
+            expected = '';
+            counts.forwarded++;
+            await route.fallback();
+        }
+    );
+    return {
+        counts,
+        allowNext(question: string) {
+            expected = question;
+        }
+    };
+}
 export function installProbe() {
     const probe = (window.__widgetProbe = { sent: [], entries: [], warnings: [], failures: [] });
     const original = window.fetch.bind(window);

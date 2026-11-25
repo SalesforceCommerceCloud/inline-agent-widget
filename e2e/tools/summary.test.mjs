@@ -140,6 +140,18 @@ test('missing, skipped, interrupted and runner-failed results never count as hea
     assert.equal(summarize(absent).tests[0].status, 'interrupted');
     assert.match(renderHtml(summarize({})), /No test results were recorded/);
 });
+test('a live workflow must report the read-only project and the selected chat project', () => {
+    const raw = report();
+    const tests = raw.suites[0].specs[0].tests;
+    assert.equal(summarize(raw, 'local', { scenario: 'typed' }).passed, false);
+    tests.push({ ...tests[0], projectName: 'storefront-readonly' });
+    assert.equal(summarize(raw, 'local', { scenario: 'typed' }).passed, true);
+    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, false);
+    tests[0].projectName = 'storefront-pill-followup';
+    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, true);
+    tests[0].projectName = 'storefront-readonly';
+    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, false);
+});
 test('nested readonly results show both reference PDPs without exposing product identities', () => {
     const raw = report({ steps: [{ title: 'PDP_1_RENDER', duration: 10 }] });
     raw.suites[0].specs[0].tests[0].projectName = 'storefront-readonly';
@@ -148,6 +160,19 @@ test('nested readonly results show both reference PDPs without exposing product 
     assert.equal(data.tests[0].steps.length, 4);
     assert.equal(data.tests[0].steps[0].name, 'Reference PDP 1: render widget');
     assert.equal(data.tests[0].steps[3].status, 'not-run');
+});
+test('configured profile reports reference stages beyond the default two PDPs', () => {
+    const raw = report({
+        steps: [{ title: 'PDP_3_RENDER', duration: 63 }],
+        attachments: [attachment('sanitized-stages', { stages: ['PDP_3_RENDER'] })]
+    });
+    raw.config.metadata = { target: 'preview-fixture', referencePdpCount: 3 };
+    raw.suites[0].specs[0].tests[0].projectName = 'storefront-readonly';
+    const data = summarize(raw);
+    assert.equal(data.target, 'preview-fixture');
+    assert.equal(data.tests[0].steps.length, 6);
+    assert.equal(data.tests[0].steps.find((step) => step.id === 'PDP_3_RENDER').durationMs, 63);
+    assert.deepEqual(data.tests[0].stages, ['PDP_3_RENDER']);
 });
 test('HTML escapes any display values and uses no external assets', () => {
     const data = summarize(report());
@@ -184,15 +209,11 @@ test('CLI produces a useful failure artifact when Playwright JSON is missing or 
         await rm(cwd, { recursive: true, force: true });
     }
 });
-test('Actions target JSON selects a storefront and keeps zyss PR labels bound to their profile', () => {
+test('Actions target JSON selects the configured storefront', () => {
     const profile = { ...targets.zyss, id: 'fixture', origin: 'https://storefront.example.test' };
     const WIDGET_TARGET_JSON = JSON.stringify(profile);
-    const WIDGET_LIVE_LABEL = 'run-zyss-live-pill-followup';
-
     assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON }), profile);
-    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: '', WIDGET_LIVE_LABEL }), targets.zyss);
-    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: JSON.stringify(targets.zyss), WIDGET_LIVE_LABEL }), targets.zyss);
-    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON, WIDGET_LIVE_LABEL }), /zyss PR labels require/);
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: '' }), targets.zyss);
     assert.throws(() => loadTarget({ WIDGET_TARGET_JSON, WIDGET_TARGET: 'zyss' }), /choose one/);
     assert.throws(() => loadTarget({ WIDGET_TARGET_JSON: 'incomplete' }), /could not read target as JSON/);
 

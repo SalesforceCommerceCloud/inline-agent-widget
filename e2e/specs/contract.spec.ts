@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installProbe } from '../support/storefront';
+import { installProbe, limitMessageSends } from '../support/storefront';
 const host = 'http://127.0.0.1:43132/pdp';
 const widget = (page) => page.locator('inline-agent-widget');
 test.beforeEach(async ({}, info) => {
@@ -172,4 +172,41 @@ test('live health probe correlates compact SSE frames without storing their text
         expect(probe.entries[2]).toMatchObject({ role: 'Chatbot', nonempty: true });
         expect(probe.entries.every((entry) => !('text' in entry))).toBe(true);
     });
+});
+
+test('live send budget blocks extra or unexpected POSTs before delivery', async ({ page }) => {
+    const path = '/conversation/fixture/message';
+    let delivered = 0;
+    await page.route('**' + path, (route) => {
+        delivered++;
+        return route.fulfill({ status: 200 });
+    });
+    const sends = await limitMessageSends(page, 1);
+    await page.goto('http://127.0.0.1:43132/health');
+    const send = (text: string) =>
+        page.evaluate(
+            async ({ path, text }) => {
+                try {
+                    return (
+                        await fetch(path, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: { staticContent: { text } } })
+                        })
+                    ).ok;
+                } catch {
+                    return false;
+                }
+            },
+            { path, text }
+        );
+
+    expect(await send('premature')).toBe(false);
+    sends.allowNext('authorized');
+    expect(await send('unexpected')).toBe(false);
+    expect(await send('authorized')).toBe(true);
+    sends.allowNext('authorized');
+    expect(await send('authorized')).toBe(false);
+    expect(sends.counts).toEqual({ forwarded: 1, blocked: 3 });
+    expect(delivered).toBe(1);
 });

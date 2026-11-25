@@ -1,10 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 import { loadTarget } from './targets.mjs';
+
+const target = loadTarget();
+
 export default defineConfig({
     testDir: './specs',
     metadata: {
         suite: 'Shared widget UMD contracts and separate live projects',
-        target: loadTarget().id,
+        target: target.id,
+        referencePdpCount: target.pdps.length,
         source: process.env.GITHUB_SHA || 'local'
     },
     fullyParallel: false,

@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { embedded, evidence, pdps, target, visit } from '../support/storefront';
+import { embedded, evidence, limitMessageSends, pdps, target, visit } from '../support/storefront';
 test('storefront deployed PDPs retain metadata, starter questions and placement across navigation', async ({
     page
 }, info) => {
     const stages: string[] = [];
+    const sends = await limitMessageSends(page, 0);
     try {
         for (const [index, product] of pdps.entries()) {
             await test.step(`PDP_${index + 1}_RENDER`, async () => {
@@ -31,7 +32,12 @@ test('storefront deployed PDPs retain metadata, starter questions and placement 
                 stages.push(`PDP_${index + 1}_METADATA_LAYOUT`);
             });
         }
+        expect(sends.counts.blocked, 'DELIVERY: read-only rendering must not attempt a live message').toBe(0);
     } finally {
+        await info.attach('sanitized-health', {
+            body: JSON.stringify({ requestCount: sends.counts.forwarded }),
+            contentType: 'application/json'
+        });
         if (await embedded(page).count()) await evidence(page, info, stages);
     }
 });

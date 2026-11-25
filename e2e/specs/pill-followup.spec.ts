@@ -1,14 +1,15 @@
 import { expect, test } from '@playwright/test';
-import { embedded, evidence, installProbe, pdps, visit } from '../support/storefront';
+import { embedded, evidence, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
 
-test('storefront starter pill and follow-up receive two replies in one fresh drawer session', async ({ page }, info) => {
+test('storefront starter pill and follow-up receive two replies in one fresh drawer session', async ({
+    page
+}, info) => {
     test.skip(process.env.WIDGET_LIVE_PILL_FOLLOWUP !== '1', 'Explicit two-message live opt-in required');
     expect(info.retry + info.repeatEachIndex, 'DELIVERY: only the first attempt is authorized').toBe(0);
 
     const stages: string[] = [];
     const expectedMessages: string[] = [];
-    let requestCount = 0;
-    let blockedRequests = 0;
+    const sends = await limitMessageSends(page, 2);
 
     async function stage<T>(name: string, check: () => Promise<T>) {
         return test.step(name, async () => {
@@ -33,8 +34,8 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
                 })
                 .toBe(turn);
             const message = await page.evaluate((index) => window.__widgetProbe.sent[index], turn - 1);
-            expect(requestCount, 'DELIVERY: forwarded sends').toBe(turn);
-            expect(blockedRequests, 'DELIVERY: unexpected or duplicate sends').toBe(0);
+            expect(sends.counts.forwarded, 'DELIVERY: forwarded sends').toBe(turn);
+            expect(sends.counts.blocked, 'DELIVERY: unexpected or duplicate sends').toBe(0);
             expect(
                 message.contextId === pdps[0].id && message.contextType === 'pdp',
                 'CONTEXT_TRANSMISSION: current PDP'
@@ -135,27 +136,6 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
     try {
         await stage('WIDGET_RENDER', async () => {
             await page.addInitScript(installProbe);
-            await page.route(
-                (url) => /\/conversation\/[^/]+\/message$/.test(url.pathname),
-                async (route) => {
-                    if (route.request().method() !== 'POST') {
-                        await route.continue();
-                        return;
-                    }
-                    const expected = expectedMessages[requestCount];
-                    let text: unknown;
-                    try {
-                        text = route.request().postDataJSON()?.message?.staticContent?.text;
-                    } catch {}
-                    if (requestCount >= 2 || !expected || text !== expected) {
-                        blockedRequests++;
-                        await route.abort('blockedbyclient');
-                        return;
-                    }
-                    requestCount++;
-                    await route.continue();
-                }
-            );
             await visit(page);
         });
 
@@ -171,6 +151,7 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
             const question = (await pill.innerText()).trim();
             expect(question.length > 0, 'STARTER_QUESTIONS: nonempty starter pill').toBe(true);
             expectedMessages.push(question);
+            sends.allowNext(question);
             await pill.click();
         });
         await stage('DRAWER_OPEN', async () => {
@@ -195,17 +176,20 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
 
         await stage('FOLLOWUP_SUBMITTED', async () => {
             await expect(composer, 'SAME_SESSION: original PDP composer is ready').toBeEditable({ timeout: 30000 });
-            const followup = 'What else should I know about this product?';
+            const defaultFollowup = 'What else should I know about this product?';
+            const followup =
+                expectedMessages[0] === defaultFollowup ? 'Could you tell me more about it?' : defaultFollowup;
             expectedMessages.push(followup);
             await composer.fill(followup);
+            sends.allowNext(followup);
             await composer.press('Enter');
         });
         await observeTurn('FOLLOWUP', 2, first);
         await stage('TWO_MESSAGE_SESSION_VERIFIED', async () => {
             expect(page.url() === originalURL, 'SAME_SESSION: remain on the original PDP').toBe(true);
             await expect(drawer.getByRole('group', { name: 'Current page context' })).toContainText(pdps[0].name);
-            expect(requestCount, 'DELIVERY: exactly two messages forwarded').toBe(2);
-            expect(blockedRequests, 'DELIVERY: unexpected or duplicate sends').toBe(0);
+            expect(sends.counts.forwarded, 'DELIVERY: exactly two messages forwarded').toBe(2);
+            expect(sends.counts.blocked, 'DELIVERY: unexpected or duplicate sends').toBe(0);
             const contextWarning = await page.evaluate(() =>
                 window.__widgetProbe.warnings.includes('INVALID_CONTEXT_VARIABLE_PAYLOAD')
             );
@@ -213,7 +197,7 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
         });
     } finally {
         await info.attach('sanitized-health', {
-            body: JSON.stringify({ requestCount }),
+            body: JSON.stringify({ requestCount: sends.counts.forwarded }),
             contentType: 'application/json'
         });
         if (await embedded(page).count()) await evidence(page, info, stages);

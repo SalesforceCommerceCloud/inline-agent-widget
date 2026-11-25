@@ -30,11 +30,13 @@ jobs:
       github.run_attempt == 1 &&
       ((github.event_name == 'workflow_dispatch' && inputs.live_chat) ||
       (github.event_name == 'pull_request' && github.event.action == 'labeled' &&
-      (github.event.label.name == 'run-zyss-live-health' ||
-       github.event.label.name == 'run-zyss-live-pill-followup') &&
+      (github.event.label.name == 'run-storefront-live-health' ||
+       github.event.label.name == 'run-storefront-live-pill-followup') &&
       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      LIVE_SCENARIO: ${{ (github.event.label.name == 'run-storefront-live-pill-followup' && 'pill-followup') || inputs.scenario || 'typed' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -50,9 +52,8 @@ jobs:
         working-directory: e2e
         env:
           WIDGET_TARGET_JSON: ${{ vars.WIDGET_LIVE_TARGET }}
-          WIDGET_LIVE_LABEL: ${{ github.event.label.name }}
-          LIVE_SCENARIO: ${{ (github.event.label.name == 'run-zyss-live-pill-followup' && 'pill-followup') || inputs.scenario || 'typed' }}
         run: |
+          : "${WIDGET_TARGET_JSON:?Set the WIDGET_LIVE_TARGET repository variable before running live checks}"
           case "$LIVE_SCENARIO" in
             typed)
               WIDGET_LIVE_CHAT=1 npx playwright test --project=storefront-readonly --project=storefront-health

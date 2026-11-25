@@ -1,9 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { embedded, evidence, installProbe, pdps, visit } from '../support/storefront';
+import { embedded, evidence, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
 test('storefront fresh-session handoff receives a real agent reply without evaluating answer accuracy', async ({
     page
 }, info) => {
     test.skip(process.env.WIDGET_LIVE_CHAT !== '1', 'Explicit live-chat opt-in required');
+    expect(info.retry + info.repeatEachIndex, 'DELIVERY: only the first attempt is authorized').toBe(0);
+    const sends = await limitMessageSends(page, 1);
     const stages: string[] = [];
     const question = 'Please tell me about this product.';
     try {
@@ -23,6 +25,7 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
         const beforeURL = page.url();
         await test.step('HANDOFF_SUBMITTED', async () => {
             await widget.getByRole('textbox', { name: 'Ask a question' }).fill(question);
+            sends.allowNext(question);
             await widget.getByRole('button', { name: 'Send question', exact: true }).click();
             stages.push('HANDOFF_SUBMITTED');
         });
@@ -101,10 +104,8 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
             await expect(page.getByRole('group', { name: 'Current page context' })).toContainText(pdps[0].name);
             await expect(page.getByRole('textbox', { name: 'Ask about ' + pdps[0].name, exact: true })).toBeVisible();
             expect(page.url()).toBe(beforeURL);
-            expect(
-                await page.evaluate((q) => window.__widgetProbe.sent.filter((m) => m.text === q).length, question),
-                'DELIVERY: no duplicate send'
-            ).toBe(1);
+            expect(sends.counts.forwarded, 'DELIVERY: one authorized message forwarded').toBe(1);
+            expect(sends.counts.blocked, 'DELIVERY: no unexpected or duplicate send').toBe(0);
             expect(
                 await page.evaluate(() => window.__widgetProbe.warnings),
                 'CONTEXT_ACCEPTANCE: no dropped-context warning'
@@ -113,12 +114,12 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
             stages.push('HANDSHAKE_CONTEXT_LABELS_VERIFIED');
         });
     } finally {
-        if (await embedded(page).count()) await evidence(page, info, stages);
         await info.attach('sanitized-health', {
             body: JSON.stringify({
-                requestCount: await page.evaluate(() => window.__widgetProbe?.sent.length).catch(() => null)
+                requestCount: sends.counts.forwarded
             }),
             contentType: 'application/json'
         });
+        if (await embedded(page).count()) await evidence(page, info, stages);
     }
 });

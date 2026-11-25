@@ -49,7 +49,7 @@ export function validateTarget(input) {
 }
 
 export function loadTarget(env = process.env) {
-    const { WIDGET_TARGET: key, WIDGET_TARGET_FILE: file, WIDGET_TARGET_JSON: json, WIDGET_LIVE_LABEL: label } = env;
+    const { WIDGET_TARGET: key, WIDGET_TARGET_FILE: file, WIDGET_TARGET_JSON: json } = env;
     if ([key, file, json].filter(Boolean).length > 1) {
         throw new Error('TARGET_CONFIG: choose one of WIDGET_TARGET, WIDGET_TARGET_FILE or WIDGET_TARGET_JSON');
     }
@@ -67,9 +67,5 @@ export function loadTarget(env = process.env) {
         selected = targets[profile];
     }
 
-    const target = validateTarget(selected);
-    if (label?.startsWith('run-zyss-live-') && JSON.stringify(target) !== JSON.stringify(targets.zyss)) {
-        throw new Error('TARGET_CONFIG: zyss PR labels require the zyss-001 NTO profile');
-    }
-    return target;
+    return validateTarget(selected);
 }
