@@ -75,8 +75,10 @@
       <div id="pdp-section" class="widget-section">
         <h2>PDP — Product Detail Page</h2>
         <inline-agent-widget
+          mode="inline"
           page-type="pdp"
           product-id-param="pid"
+          header-title="Ask Assistant"
           placeholder="Type a message…"
           persist-session
           enable-logging
@@ -88,8 +90,10 @@
         <h2>PLP — Product Listing / Category Page</h2>
         <inline-agent-widget
           id="plp-widget"
+          mode="inline"
           page-type="plp"
           category-name="YOUR_CATEGORY_NAME"
+          header-title="Ask Assistant"
           placeholder="Ask about this category…"
           persist-session
           enable-logging
@@ -101,7 +105,9 @@
         <h2>SRP — Search Results Page</h2>
         <inline-agent-widget
           id="srp-widget"
+          mode="inline"
           page-type="srp"
+          header-title="Ask Assistant"
           placeholder="Ask about these results…"
           persist-session
           enable-logging

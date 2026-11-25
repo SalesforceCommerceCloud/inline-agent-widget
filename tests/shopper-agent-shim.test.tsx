@@ -61,6 +61,21 @@ describe("ShopperAgentShim", () => {
     expect(textarea.placeholder).toBe("Ask me anything");
   });
 
+  it("renders the default header title when headerTitle is not set", () => {
+    render(<ShopperAgentShim config={BASE_CONFIG} />);
+    expect(screen.getByText("Ask Assistant")).toBeDefined();
+  });
+
+  it("renders a custom header title from config", () => {
+    render(
+      <ShopperAgentShim
+        config={{ ...BASE_CONFIG, headerTitle: "Product Expert" }}
+      />,
+    );
+    expect(screen.getByText("Product Expert")).toBeDefined();
+    expect(screen.queryByText("Ask Assistant")).toBeNull();
+  });
+
   it("honors an explicit placeholder override from config", () => {
     render(
       <ShopperAgentShim
