@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       live_chat:
-        description: Submit one anonymous question to zyss-001
+        description: Explicitly approve the selected live scenario
         type: boolean
         default: false
+      scenario:
+        description: Choose the one-question or two-question live scenario
+        type: choice
+        default: typed
+        options: [typed, pill-followup]
 
 permissions:
   contents: read
@@ -22,9 +27,11 @@ jobs:
     name: Live storefront check (explicit opt-in)
     if: >-
       github.repository == 'SalesforceCommerceCloud/inline-agent-widget' &&
+      github.run_attempt == 1 &&
       ((github.event_name == 'workflow_dispatch' && inputs.live_chat) ||
       (github.event_name == 'pull_request' && github.event.action == 'labeled' &&
-      github.event.label.name == 'run-zyss-live-health' &&
+      (github.event.label.name == 'run-zyss-live-health' ||
+       github.event.label.name == 'run-zyss-live-pill-followup') &&
       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -39,7 +46,22 @@ jobs:
           cache-dependency-path: e2e/package-lock.json
       - run: npm ci --prefix e2e
       - run: cd e2e && npx playwright install --with-deps chromium
-      - run: cd e2e && WIDGET_LIVE_CHAT=1 npx playwright test --project=storefront-readonly --project=storefront-health
+      - name: Run selected live scenario once
+        working-directory: e2e
+        env:
+          LIVE_SCENARIO: ${{ (github.event.label.name == 'run-zyss-live-pill-followup' && 'pill-followup') || inputs.scenario || 'typed' }}
+        run: |
+          case "$LIVE_SCENARIO" in
+            typed)
+              WIDGET_LIVE_CHAT=1 npx playwright test --project=storefront-readonly --project=storefront-health
+              ;;
+            pill-followup)
+              WIDGET_TARGET=zyss WIDGET_LIVE_PILL_FOLLOWUP=1 npx playwright test --project=storefront-readonly --project=storefront-pill-followup
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
       - name: Generate sanitized health report
         if: always()
         working-directory: e2e

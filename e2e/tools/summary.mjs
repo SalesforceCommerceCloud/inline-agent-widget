@@ -12,6 +12,23 @@ const healthSteps = {
     REPLY_RENDERED: 'Render the agent response',
     HANDSHAKE_CONTEXT_LABELS_VERIFIED: 'Verify welcome order, named context and single delivery'
 };
+const pillFollowupSteps = {
+    WIDGET_RENDER: healthSteps.WIDGET_RENDER,
+    CONFIGURATION: healthSteps.CONFIGURATION,
+    PILL_SUBMITTED: 'Click a PDP starter pill',
+    DRAWER_OPEN: healthSteps.DRAWER_OPEN,
+    PILL_CONTEXT_SENT: 'Send the pill question with PDP context',
+    PILL_MESSAGE_ACCEPTED: 'Receive HTTP acceptance for the pill question',
+    PILL_AGENT_REPLY_RECEIVED: 'Receive a reply after the pill question',
+    PILL_REPLY_RENDERED: 'Render the pill reply in the drawer',
+    HANDSHAKE_CONTEXT_LABELS_VERIFIED: 'Verify welcome order and named PDP context',
+    FOLLOWUP_SUBMITTED: 'Submit a follow-up in the same drawer',
+    FOLLOWUP_CONTEXT_SENT: 'Send follow-up with PDP context in the same conversation',
+    FOLLOWUP_MESSAGE_ACCEPTED: 'Receive HTTP acceptance for the follow-up',
+    FOLLOWUP_AGENT_REPLY_RECEIVED: 'Receive a new reply after the follow-up',
+    FOLLOWUP_REPLY_RENDERED: 'Render the new follow-up reply',
+    TWO_MESSAGE_SESSION_VERIFIED: 'Verify exactly two messages in the original PDP session'
+};
 const layoutSteps = {
     PDP_1_RENDER: 'Reference PDP 1: render widget',
     PDP_1_METADATA_LAYOUT: 'Reference PDP 1: questions, metadata and placement',
@@ -20,7 +37,8 @@ const layoutSteps = {
 };
 const projects = {
     'storefront-readonly': { name: 'Deployed PDP rendering and placement', steps: layoutSteps },
-    'storefront-health': { name: 'Fresh-session handoff and agent availability', steps: healthSteps }
+    'storefront-health': { name: 'Fresh-session handoff and agent availability', steps: healthSteps },
+    'storefront-pill-followup': { name: 'Starter pill and same-session follow-up', steps: pillFollowupSteps }
 };
 const failureCodes = new Set([
     'PDP_HTTP',
@@ -32,12 +50,15 @@ const failureCodes = new Set([
     'AGENT_REPLY',
     'COLD_HANDSHAKE',
     'DELIVERY',
+    'SAME_SESSION',
     'CONTEXT_ACCEPTANCE',
     ...Object.keys(healthSteps),
+    ...Object.keys(pillFollowupSteps),
     ...Object.keys(layoutSteps)
 ]);
 const completedStages = new Set([
     ...Object.keys(healthSteps),
+    ...Object.keys(pillFollowupSteps),
     ...Object.keys(layoutSteps),
     'METADATA_QUESTIONS_PLACEMENT'
 ]);

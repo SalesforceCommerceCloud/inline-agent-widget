@@ -24,7 +24,7 @@ The default profile is zyss-001 / NTO. `WIDGET_TARGET_FILE` accepts a JSON profi
 
 **Shared widget browser merge check** runs Chromium for changes to the widget source, build inputs, E2E suite or browser workflow. Other changes report out of scope without browser setup.
 
-To request one live proof before merge, apply `run-zyss-live-health` to a same-repository PR. Only the label-add event triggers live chat; later pushes do not. After the workflow reaches main, manual dispatch with `live_chat=true` is available. There is no schedule and no S3/UIP publishing in this phase.
+The separate **Live widget storefront check** runs read-only checks on two reference PDPs, then the selected live scenario. On a same-repository PR, adding `run-zyss-live-health` selects one typed question. Adding `run-zyss-live-pill-followup` selects one starter pill click and one follow-up in the same drawer on zyss-001. The two-message test verifies the PDP context, HTTP acceptance and a newly rendered reply on each turn. It blocks extra sends. Later pushes and Actions reruns do not send messages. After the workflow reaches main, manual dispatch requires `live_chat=true` and a scenario choice.
 
 The live job disables screenshots, traces and video. It uploads only the allowlisted status/stage summary and corresponding HTML; it never uploads the full Playwright report, transcripts, browser storage or raw network payloads. GitHub artifact access follows repository visibility; this summary deliberately contains no chat content. Controlled fixture reports may contain synthetic data. Source commit and observed deployed asset versions are distinct; a passing fixture does not prove deployment.
 
@@ -36,6 +36,6 @@ The **zyss-health-sanitized** artifact contains `index.html` and `summary.json`.
 
 Both artifacts are retained for 14 days on new runs. Each Actions job summary explains where to find its report. A controlled HTML report is for debugging individual tests; the sanitized live report is for safe operational diagnosis. Neither requires S3, IAM, UIP, Trino or Superset. Those integrations are deferred; no schedule or publishing identity is enabled here.
 
-The reporting change is validated with controlled browser tests and synthetic success/failure/missing-report cases. It does not submit another live question; new measured live phase timings will appear on the next separately authorized live run.
+Reporting checks cover success, failures, missing reports and separate evidence for each turn. The live report shows the forwarded send count and named stages for both replies.
 
 Each live attempt is single-shot. Investigate a failure before authorizing another question. The prior local monitor remains paused until an explicit handover decision.

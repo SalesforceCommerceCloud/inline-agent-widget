@@ -46,6 +46,12 @@ export default defineConfig({
             testMatch: 'health.spec.ts',
             use: { ...devices['Desktop Chrome'], trace: 'off', video: 'off', screenshot: 'off' },
             timeout: 150000
+        },
+        {
+            name: 'storefront-pill-followup',
+            testMatch: 'pill-followup.spec.ts',
+            use: { ...devices['Desktop Chrome'], trace: 'off', video: 'off', screenshot: 'off' },
+            timeout: 310000
         }
     ]
 });

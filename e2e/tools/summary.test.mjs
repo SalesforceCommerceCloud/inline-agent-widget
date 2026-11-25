@@ -91,6 +91,25 @@ test('only allowlisted names, configuration and failure codes can leave a raw li
     assert.equal(renderHtml(data).includes('secret-token'), false);
     assert.equal(renderHtml(data).includes('<script'), false);
 });
+test('two-turn report keeps separate reply stages and excludes conversation data', () => {
+    const raw = report({
+        steps: [
+            { title: 'PILL_REPLY_RENDERED', duration: 25 },
+            { title: 'FOLLOWUP_REPLY_RENDERED', duration: 40 }
+        ],
+        attachments: [
+            attachment('sanitized-health', { requestCount: 2, conversation: 'private-conversation' }),
+            attachment('sanitized-stages', { stages: ['PILL_REPLY_RENDERED', 'FOLLOWUP_REPLY_RENDERED'] })
+        ]
+    });
+    raw.suites[0].specs[0].tests[0].projectName = 'storefront-pill-followup';
+    const data = summarize(raw);
+    assert.equal(data.passed, true);
+    assert.equal(data.tests[0].requestCount, 2);
+    assert.deepEqual(data.tests[0].stages, ['PILL_REPLY_RENDERED', 'FOLLOWUP_REPLY_RENDERED']);
+    assert.equal(data.tests[0].steps.find((step) => step.id === 'FOLLOWUP_REPLY_RENDERED').durationMs, 40);
+    assert.doesNotMatch(JSON.stringify(data), /private-conversation/);
+});
 test('malformed evidence and invalid numeric fields do not copy raw values or break reporting', () => {
     const data = summarize(
         report({
