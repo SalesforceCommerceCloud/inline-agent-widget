@@ -184,6 +184,21 @@ test('CLI produces a useful failure artifact when Playwright JSON is missing or 
         await rm(cwd, { recursive: true, force: true });
     }
 });
+test('Actions target JSON selects a storefront and keeps zyss PR labels bound to their profile', () => {
+    const profile = { ...targets.zyss, id: 'fixture', origin: 'https://storefront.example.test' };
+    const WIDGET_TARGET_JSON = JSON.stringify(profile);
+    const WIDGET_LIVE_LABEL = 'run-zyss-live-pill-followup';
+
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON }), profile);
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: '', WIDGET_LIVE_LABEL }), targets.zyss);
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: JSON.stringify(targets.zyss), WIDGET_LIVE_LABEL }), targets.zyss);
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON, WIDGET_LIVE_LABEL }), /zyss PR labels require/);
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON, WIDGET_TARGET: 'zyss' }), /choose one/);
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON: 'incomplete' }), /could not read target as JSON/);
+
+    profile.pdps = [{ id: 'foreign', name: 'Foreign', path: '//elsewhere.invalid/pdp' }, ...profile.pdps];
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON: JSON.stringify(profile) }), /same origin|selected origin/);
+});
 test('target configuration supports other storefronts while rejecting cross-origin PDPs', () => {
     assert.equal(loadTarget({}).id, 'zyss-001');
     assert.throws(() => loadTarget({ WIDGET_TARGET: 'missing' }));

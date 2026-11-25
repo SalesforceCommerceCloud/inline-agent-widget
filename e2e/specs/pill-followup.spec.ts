@@ -1,12 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { embedded, evidence, installProbe, origin, pdps, target, visit } from '../support/storefront';
+import { embedded, evidence, installProbe, pdps, visit } from '../support/storefront';
 
-test('zyss-001 starter pill and follow-up receive two replies in one fresh drawer session', async ({ page }, info) => {
+test('storefront starter pill and follow-up receive two replies in one fresh drawer session', async ({ page }, info) => {
     test.skip(process.env.WIDGET_LIVE_PILL_FOLLOWUP !== '1', 'Explicit two-message live opt-in required');
-    expect(
-        target.id === 'zyss-001' && origin === 'https://zyss-001.unified.demandware.net',
-        'TARGET: two-message test is limited to zyss-001'
-    ).toBe(true);
     expect(info.retry + info.repeatEachIndex, 'DELIVERY: only the first attempt is authorized').toBe(0);
 
     const stages: string[] = [];

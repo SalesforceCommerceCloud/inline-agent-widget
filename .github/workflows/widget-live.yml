@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       live_chat:
-        description: Explicitly approve the selected live scenario
+        description: Approve the selected live scenario on the configured storefront
         type: boolean
         default: false
       scenario:
@@ -49,6 +49,8 @@ jobs:
       - name: Run selected live scenario once
         working-directory: e2e
         env:
+          WIDGET_TARGET_JSON: ${{ vars.WIDGET_LIVE_TARGET }}
+          WIDGET_LIVE_LABEL: ${{ github.event.label.name }}
           LIVE_SCENARIO: ${{ (github.event.label.name == 'run-zyss-live-pill-followup' && 'pill-followup') || inputs.scenario || 'typed' }}
         run: |
           case "$LIVE_SCENARIO" in
@@ -56,7 +58,7 @@ jobs:
               WIDGET_LIVE_CHAT=1 npx playwright test --project=storefront-readonly --project=storefront-health
               ;;
             pill-followup)
-              WIDGET_TARGET=zyss WIDGET_LIVE_PILL_FOLLOWUP=1 npx playwright test --project=storefront-readonly --project=storefront-pill-followup
+              WIDGET_LIVE_PILL_FOLLOWUP=1 npx playwright test --project=storefront-readonly --project=storefront-pill-followup
               ;;
             *)
               exit 1
@@ -69,7 +71,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: zyss-health-sanitized
+          name: widget-live-sanitized
           path: e2e/sanitized-report
           retention-days: 14
           if-no-files-found: error

@@ -49,10 +49,27 @@ export function validateTarget(input) {
 }
 
 export function loadTarget(env = process.env) {
-    if (env.WIDGET_TARGET && env.WIDGET_TARGET_FILE) throw new Error('TARGET_CONFIG: choose WIDGET_TARGET or WIDGET_TARGET_FILE');
-    const selected = env.WIDGET_TARGET_FILE
-        ? JSON.parse(readFileSync(env.WIDGET_TARGET_FILE, 'utf8'))
-        : targets[env.WIDGET_TARGET || 'zyss'];
-    if (!selected) throw new Error('TARGET_CONFIG: unknown WIDGET_TARGET');
-    return validateTarget(selected);
+    const { WIDGET_TARGET: key, WIDGET_TARGET_FILE: file, WIDGET_TARGET_JSON: json, WIDGET_LIVE_LABEL: label } = env;
+    if ([key, file, json].filter(Boolean).length > 1) {
+        throw new Error('TARGET_CONFIG: choose one of WIDGET_TARGET, WIDGET_TARGET_FILE or WIDGET_TARGET_JSON');
+    }
+
+    let selected;
+    if (file || json) {
+        try {
+            selected = JSON.parse(json || readFileSync(file, 'utf8'));
+        } catch {
+            throw new Error('TARGET_CONFIG: could not read target as JSON');
+        }
+    } else {
+        const profile = key || 'zyss';
+        if (!Object.hasOwn(targets, profile)) throw new Error('TARGET_CONFIG: unknown WIDGET_TARGET');
+        selected = targets[profile];
+    }
+
+    const target = validateTarget(selected);
+    if (label?.startsWith('run-zyss-live-') && JSON.stringify(target) !== JSON.stringify(targets.zyss)) {
+        throw new Error('TARGET_CONFIG: zyss PR labels require the zyss-001 NTO profile');
+    }
+    return target;
 }

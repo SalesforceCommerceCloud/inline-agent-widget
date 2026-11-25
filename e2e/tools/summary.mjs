@@ -204,7 +204,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (process.env.GITHUB_STEP_SUMMARY) {
         await writeFile(
             process.env.GITHUB_STEP_SUMMARY,
-            `## Embedded widget live checks\n\n${data.passed ? 'Passed' : 'Not passed'}: ${data.counts.passed} passed, ${data.counts.failed} failed, ${data.counts.skipped} skipped.\n\nDownload **zyss-health-sanitized** for named stages, timings and failure classification. No chat content is included.\n`,
+            `## Embedded widget live checks\n\n${data.passed ? 'Passed' : 'Not passed'}: ${data.counts.passed} passed, ${data.counts.failed} failed, ${data.counts.skipped} skipped.\n\nDownload **widget-live-sanitized** for named stages, timings and failure classification. No chat content is included.\n`,
             { flag: 'a' }
         );
     }
