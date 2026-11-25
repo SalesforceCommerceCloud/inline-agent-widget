@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 
+export const MAX_REFERENCE_PDPS = 100;
+
 const products = [
     { slug: 'trailfit-charge-2-500500.html', id: '500500', name: 'TrailFit Charge 2' },
     { slug: 'trailfit-alta-500400.html', id: '500400', name: 'TrailFit Alta' }
@@ -27,8 +29,8 @@ export function validateTarget(input) {
             throw new Error('TARGET_CONFIG: missing ' + field);
         }
     }
-    if (!Array.isArray(input.pdps) || input.pdps.length < 2) {
-        throw new Error('TARGET_CONFIG: configure at least two reference PDPs');
+    if (!Array.isArray(input.pdps) || input.pdps.length < 2 || input.pdps.length > MAX_REFERENCE_PDPS) {
+        throw new Error(`TARGET_CONFIG: configure between two and ${MAX_REFERENCE_PDPS} reference PDPs`);
     }
     const pdps = input.pdps.map(({ id, name, path }) => {
         if (![id, name, path].every((value) => typeof value === 'string' && value.trim())) {

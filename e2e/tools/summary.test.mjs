@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { summarize, renderHtml } from './summary.mjs';
-import { validateTarget, loadTarget, targets } from '../targets.mjs';
+import { validateTarget, loadTarget, targets, MAX_REFERENCE_PDPS } from '../targets.mjs';
 const attachment = (name, value) => ({ name, body: Buffer.from(JSON.stringify(value)).toString('base64') });
 function report(result = {}, overrides = {}) {
     return {
@@ -223,6 +223,14 @@ test('Actions target JSON selects the configured storefront', () => {
 test('target configuration supports other storefronts while rejecting cross-origin PDPs', () => {
     assert.equal(loadTarget({}).id, 'zyss-001');
     assert.throws(() => loadTarget({ WIDGET_TARGET: 'missing' }));
+    assert.throws(
+        () =>
+            validateTarget({
+                ...targets.zyss,
+                pdps: Array(MAX_REFERENCE_PDPS + 1).fill(targets.zyss.pdps[0])
+            }),
+        /reference PDPs/
+    );
     assert.throws(() =>
         validateTarget({
             ...targets.zyss,

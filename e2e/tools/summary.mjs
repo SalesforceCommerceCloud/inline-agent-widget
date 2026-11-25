@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { MAX_REFERENCE_PDPS } from '../targets.mjs';
 
 const healthSteps = {
     WIDGET_RENDER: 'Load PDP and render the widget',
@@ -82,7 +83,7 @@ export function summarize(report, source = 'unknown', run = {}) {
     const metadata = report.config?.metadata;
     const referenceCount = metadata?.referencePdpCount;
     const readOnlySteps = layoutSteps(
-        Number.isInteger(referenceCount) && referenceCount >= 2 ? Math.min(referenceCount, 100) : 2
+        Number.isInteger(referenceCount) && referenceCount >= 2 ? Math.min(referenceCount, MAX_REFERENCE_PDPS) : 2
     );
     const tests = [];
     const visit = (suites = []) => {
