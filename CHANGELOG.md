@@ -2,6 +2,10 @@
 
 The release version comes from `package.json`. Keep the newest dated entry first.
 
+## 0.5.3 — 2026-11-24
+
+- Add SRP pills test and update demo page to show all three widget variants (PDP, PLP, SRP) with seeded URL params for local testing.
+
 ## 0.5.2 — 2026-11-19
 
 - Render category description in shopper-agent mode (PLP) above question pills.

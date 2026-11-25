@@ -18,6 +18,9 @@ export interface WidgetConfig {
   /** Placeholder text for the message input. */
   placeholder?: string;
 
+  /** Header title displayed at the top of the widget. Defaults to "Ask Assistant". */
+  headerTitle?: string;
+
   /**
    * PDP interaction mode. `inline` (default) runs the widget's own SCRT2
    * session and answers inside the widget. `shopper-agent` paints a

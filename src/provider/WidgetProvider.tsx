@@ -52,8 +52,10 @@ function resolveInlineContext(
   const pageType = snapshot.pageType ?? "pdp";
   switch (pageType) {
     case "plp": {
-      const categoryId = snapshot.categoryId?.trim();
-      return categoryId ? buildPlpInlineContext(categoryId) : undefined;
+      const categoryValue = snapshot.categoryId?.trim();
+      return categoryValue
+        ? buildPlpInlineContext({ name: "cgid", value: categoryValue })
+        : undefined;
     }
     case "srp": {
       const query = snapshot.searchQuery?.trim();

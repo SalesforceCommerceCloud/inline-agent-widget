@@ -98,7 +98,7 @@ export function ShopperAgentShim({
           <span className="header-icon-wrap">
             <SparkleIcon />
           </span>
-          <h2 className="widget-header-title">Ask Assistant</h2>
+          <h2 className="widget-header-title">{config.headerTitle ?? "Ask Assistant"}</h2>
         </div>
         <span className="widget-badge">New</span>
       </header>

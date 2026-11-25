@@ -127,7 +127,7 @@ export function buildPdpInlineContext(
 
 /** Build commerce_agent_context for a category / product listing page. */
 export function buildPlpInlineContext(
-  categoryId: string,
+  categoryId: { name: string; value: string },
 ): SessionContextVariable[] {
   const context: CommerceAgentContext = {
     version: COMMERCE_AGENT_CONTEXT_VERSION,
