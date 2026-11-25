@@ -149,8 +149,8 @@ describe("buildPdpInlineContext", () => {
 });
 
 describe("buildPlpInlineContext", () => {
-  it("builds a plp_inline StructuredValue with the category id", () => {
-    const context = buildPlpInlineContext("mens-clothing-jackets");
+  it("builds a plp_inline StructuredValue with the category id as { name, value }", () => {
+    const context = buildPlpInlineContext({ name: "cgid", value: "mens-clothing-jackets" });
     expect(context).toHaveLength(1);
     expect(context[0].name).toBe("commerce_agent_context");
     expect(context[0].value).toEqual({
@@ -158,7 +158,7 @@ describe("buildPlpInlineContext", () => {
       value: {
         version: "1.0.0",
         page_context_type: "plp_inline",
-        page_context_data: { categoryId: "mens-clothing-jackets" },
+        page_context_data: { categoryId: { name: "cgid", value: "mens-clothing-jackets" } },
       },
     });
   });

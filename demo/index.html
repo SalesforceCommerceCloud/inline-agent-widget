@@ -80,9 +80,6 @@
           product-id-param="pid"
           header-title="Ask Assistant"
           placeholder="Type a message…"
-          persist-session
-          enable-logging
-          pre-warm
         ></inline-agent-widget>
       </div>
 
@@ -95,9 +92,6 @@
           category-name="YOUR_CATEGORY_NAME"
           header-title="Ask Assistant"
           placeholder="Ask about this category…"
-          persist-session
-          enable-logging
-          pre-warm
         ></inline-agent-widget>
       </div>
 
@@ -109,9 +103,6 @@
           page-type="srp"
           header-title="Ask Assistant"
           placeholder="Ask about these results…"
-          persist-session
-          enable-logging
-          pre-warm
         ></inline-agent-widget>
       </div>
     </div>
@@ -122,6 +113,9 @@
         "org-id": "YOUR_ORG_ID",
         "es-developer-name": "YOUR_ES_DEVELOPER_NAME",
         "capabilities-version": "66",
+        "persist-session": "",
+        "enable-logging": "",
+        "pre-warm": "",
       };
 
       document.querySelectorAll("inline-agent-widget").forEach(function (widget) {
