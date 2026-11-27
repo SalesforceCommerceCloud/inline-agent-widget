@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
+      WIDGET_TARGET_JSON: ${{ vars.WIDGET_LIVE_TARGET }}
       LIVE_SCENARIO: ${{ (github.event.label.name == 'run-storefront-live-pill-followup' && 'pill-followup') || inputs.scenario || 'typed' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -50,8 +51,6 @@ jobs:
       - run: cd e2e && npx playwright install --with-deps chromium
       - name: Run selected live scenario once
         working-directory: e2e
-        env:
-          WIDGET_TARGET_JSON: ${{ vars.WIDGET_LIVE_TARGET }}
         run: |
           : "${WIDGET_TARGET_JSON:?Set the WIDGET_LIVE_TARGET repository variable before running live checks}"
           case "$LIVE_SCENARIO" in

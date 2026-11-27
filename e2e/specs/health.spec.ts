@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { embedded, evidence, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
+import { embedded, evidence, findCorrelatedReply, hasRenderedReplyAfterQuestion, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
 test('storefront fresh-session handoff receives a real agent reply without evaluating answer accuracy', async ({
     page
 }, info) => {
@@ -8,6 +8,7 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
     const sends = await limitMessageSends(page, 1);
     const stages: string[] = [];
     const question = 'Please tell me about this product.';
+    const drawer = page.locator('.cim-widget-dialog').first();
     try {
         await test.step('WIDGET_RENDER', async () => {
             await page.addInitScript(installProbe);
@@ -31,7 +32,7 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
         });
         await test.step('DRAWER_OPEN', async () => {
             await expect(
-                page.locator('.cim-widget-dialog').first(),
+                drawer,
                 'DRAWER_OPEN: real shopper-agent drawer'
             ).toBeVisible({ timeout: 30000 });
             stages.push('DRAWER_OPEN');
@@ -47,6 +48,7 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
                 )
                 .toBe(1);
             const message = await page.evaluate((q) => window.__widgetProbe.sent.find((m) => m.text === q), question);
+            expect(Boolean(message.id && message.conversation), 'MESSAGE_SENT: request and conversation identifiers').toBe(true);
             expect(message.contextId, 'CONTEXT_TRANSMISSION: current PDP id').toBe(pdps[0].id);
             expect(message.contextType, 'CONTEXT_TRANSMISSION: PDP context type').toBe('pdp');
             stages.push('QUESTION_CONTEXT_SENT');
@@ -66,31 +68,19 @@ test('storefront fresh-session handoff receives a real agent reply without evalu
         });
         await test.step('AGENT_REPLY_RECEIVED', async () => {
             await expect
-                .poll(
-                    () =>
-                        page.evaluate((id) => {
-                            const p = window.__widgetProbe;
-                            const echo = p.entries.findIndex(
-                                (e) => e.id === id && ['EndUser', 'Customer'].includes(e.role)
-                            );
-                            return (
-                                echo >= 0 &&
-                                p.entries
-                                    .slice(echo + 1)
-                                    .some((e) => ['Chatbot', 'Agent'].includes(e.role) && e.nonempty)
-                            );
-                        }, sent.id),
-                    { timeout: 60000, message: 'AGENT_REPLY: nonempty bot message after the matching user echo' }
-                )
+                .poll(async () => Boolean(await findCorrelatedReply(page, sent)), {
+                    timeout: 60000,
+                    message: 'AGENT_REPLY: nonempty agent message after the matching user echo'
+                })
                 .toBe(true);
             stages.push('AGENT_REPLY_RECEIVED');
         });
         await test.step('REPLY_RENDERED', async () => {
-            const bot = page.locator('.cim-widget-message-group.chatbot').last();
-            await expect(bot, 'REPLY_RENDERED: agent response visible in drawer').toBeVisible();
-            expect((await bot.innerText()).trim().length, 'REPLY_RENDERED: nonempty visible response').toBeGreaterThan(
-                0
-            );
+            await expect
+                .poll(() => hasRenderedReplyAfterQuestion(drawer, question), {
+                    message: 'REPLY_RENDERED: visible agent bubble after the matching user message'
+                })
+                .toBe(true);
             stages.push('REPLY_RENDERED');
         });
         await test.step('HANDSHAKE_CONTEXT_LABELS_VERIFIED', async () => {

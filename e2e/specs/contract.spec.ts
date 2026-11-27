@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installProbe, limitMessageSends } from '../support/storefront';
+import { findCorrelatedReply, hasRenderedReplyAfterQuestion, installProbe, limitMessageSends } from '../support/storefront';
 const host = 'http://127.0.0.1:43132/pdp';
 const widget = (page) => page.locator('inline-agent-widget');
 test.beforeEach(async ({}, info) => {
@@ -172,6 +172,29 @@ test('live health probe correlates compact SSE frames without storing their text
         expect(probe.entries[2]).toMatchObject({ role: 'Chatbot', nonempty: true });
         expect(probe.entries.every((entry) => !('text' in entry))).toBe(true);
     });
+});
+
+test('live reply evidence requires a correlated event and a rendered reply after the question', async ({ page }) => {
+    await page.setContent('<main><p class="cim-widget-message-group chatbot">Welcome</p><p class="cim-widget-user-message-text">Fixture question</p></main>');
+    const drawer = page.locator('main');
+    const question = 'Fixture question';
+    const sent = { id: 'question-1', conversation: 'thread-1' };
+    await page.evaluate(() => {
+        window.__widgetProbe = {
+            entries: [
+                { id: 'welcome', role: 'Chatbot', nonempty: true, conversation: 'thread-1' },
+                { id: 'question-1', role: 'EndUser', nonempty: true, conversation: 'thread-1' },
+                { id: 'wrong-thread', role: 'Chatbot', nonempty: true, conversation: 'thread-2' },
+                { id: 'reply-1', role: 'Chatbot', nonempty: true, conversation: 'thread-1' }
+            ]
+        };
+    });
+    expect(await findCorrelatedReply(page, sent)).toBe('reply-1');
+    expect(await findCorrelatedReply(page, sent, 'reply-1')).toBe('');
+    expect(await hasRenderedReplyAfterQuestion(drawer, question)).toBe(false);
+    const reply = '<p class="cim-widget-message-group chatbot">Fixture reply</p>';
+    await drawer.evaluate((node, html) => node.insertAdjacentHTML('beforeend', html), reply);
+    expect(await hasRenderedReplyAfterQuestion(drawer, question)).toBe(true);
 });
 
 test('live send budget blocks extra or unexpected POSTs before delivery', async ({ page }) => {

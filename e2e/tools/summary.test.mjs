@@ -56,7 +56,7 @@ test('named phases retain measured durations and mark subsequent checks not run 
     const html = renderHtml(data);
     assert.match(html, /Open the shopper-agent drawer/);
     assert.match(html, /0.80 s/);
-    assert.match(html, /Not passed/);
+    assert.match(html, /Quality gate failed/);
 });
 test('only allowlisted names, configuration and failure codes can leave a raw live report', () => {
     const secret = '<script>secret-token</script>';
@@ -104,7 +104,7 @@ test('two-turn report keeps separate reply stages and excludes conversation data
     });
     raw.suites[0].specs[0].tests[0].projectName = 'storefront-pill-followup';
     const data = summarize(raw);
-    assert.equal(data.passed, true);
+    assert.equal(data.passed, false);
     assert.equal(data.tests[0].requestCount, 2);
     assert.deepEqual(data.tests[0].stages, ['PILL_REPLY_RENDERED', 'FOLLOWUP_REPLY_RENDERED']);
     assert.equal(data.tests[0].steps.find((step) => step.id === 'FOLLOWUP_REPLY_RENDERED').durationMs, 40);
@@ -137,21 +137,67 @@ test('missing, skipped, interrupted and runner-failed results never count as hea
     assert.equal(summarize(unknown).tests[0].project, 'unknown');
     const absent = report();
     absent.suites[0].specs[0].tests[0].results = [];
-    assert.equal(summarize(absent).tests[0].status, 'interrupted');
+    assert.equal(summarize(absent).tests.length, 0);
     assert.match(renderHtml(summarize({})), /No test results were recorded/);
 });
-test('a live workflow must report the read-only project and the selected chat project', () => {
+function passingLive(scenario = 'typed') {
+    const chat = scenario === 'typed' ? 'storefront-health' : 'storefront-pill-followup';
     const raw = report();
     const tests = raw.suites[0].specs[0].tests;
-    assert.equal(summarize(raw, 'local', { scenario: 'typed' }).passed, false);
-    tests.push({ ...tests[0], projectName: 'storefront-readonly' });
-    assert.equal(summarize(raw, 'local', { scenario: 'typed' }).passed, true);
-    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, false);
-    tests[0].projectName = 'storefront-pill-followup';
-    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, true);
-    tests[0].projectName = 'storefront-readonly';
-    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).passed, false);
+    tests[0].projectName = chat;
+    tests.push({ projectName: 'storefront-readonly', results: [{ status: 'passed', duration: 100 }] });
+    const plan = summarize(raw, 'local', { scenario }).tests;
+    for (const [index, test] of tests.entries()) {
+        const requestCount = index === 0 ? (scenario === 'typed' ? 1 : 2) : 0;
+        test.results[0].steps = plan[index].steps.map(({ id }) => ({ title: id, duration: 50 }));
+        test.results[0].attachments = [attachment('sanitized-health', { requestCount })];
+    }
+    return raw;
+}
+
+test('a live workflow requires both projects and all expected stages, plus the correct send counts', () => {
+    for (const [scenario, expectedStages] of [['typed', 13], ['pill-followup', 19]]) {
+        const raw = passingLive(scenario);
+        const data = summarize(raw, 'local', { scenario });
+        assert.equal(data.passed, true);
+        assert.equal(data.quality.expected, 2);
+        assert.equal(data.quality.stages.expected, expectedStages);
+        assert.match(renderHtml(data), /2\/2 required tests passed/);
+
+        const tests = raw.suites[0].specs[0].tests;
+        const initial = tests[0].results[0].steps;
+        for (const steps of [[], initial.slice(1), [...initial, initial[0]]]) {
+            tests[0].results[0].steps = steps;
+            const failed = summarize(raw, 'local', { scenario });
+            assert.equal(failed.passed, false);
+            assert.equal(failed.tests[0].failureStage, 'REPORT_EVIDENCE');
+            assert.match(renderHtml(failed), /1\/2 required tests passed/);
+        }
+        tests[0].results[0].steps = initial;
+        tests[0].results[0].attachments = [attachment('sanitized-health', { requestCount: 0 })];
+        assert.equal(summarize(raw, 'local', { scenario }).passed, false);
+    }
 });
+
+test('required tests distinguish missing, skipped, duplicate and wrong-scenario results', () => {
+    const raw = passingLive();
+    const tests = raw.suites[0].specs[0].tests;
+    const initial = tests[0].results[0];
+    tests[0].results[0] = { status: 'skipped' };
+    assert.equal(summarize(raw).quality.skipped, 1);
+    tests[0].results[0] = initial;
+    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).quality.unexpected, 1);
+    tests.push(tests[0]);
+    assert.equal(summarize(raw).passed, false);
+    assert.equal(summarize(raw).quality.unexpected, 1);
+    tests.splice(0, 1);
+    tests.pop();
+    const missing = summarize(raw);
+    assert.equal(missing.runnerFailed, false);
+    assert.equal(missing.quality.missing.length, 1);
+    assert.match(renderHtml(missing), /1 missing/);
+});
+
 test('nested readonly results show both reference PDPs without exposing product identities', () => {
     const raw = report({ steps: [{ title: 'PDP_1_RENDER', duration: 10 }] });
     raw.suites[0].specs[0].tests[0].projectName = 'storefront-readonly';
@@ -159,7 +205,7 @@ test('nested readonly results show both reference PDPs without exposing product 
     const data = summarize(raw);
     assert.equal(data.tests[0].steps.length, 4);
     assert.equal(data.tests[0].steps[0].name, 'Reference PDP 1: render widget');
-    assert.equal(data.tests[0].steps[3].status, 'not-run');
+    assert.equal(data.tests[0].steps[3].status, 'not-recorded');
 });
 test('configured profile reports reference stages beyond the default two PDPs', () => {
     const raw = report({
@@ -187,19 +233,22 @@ test('CLI produces a useful failure artifact when Playwright JSON is missing or 
     await mkdir('test-results', { recursive: true });
     const cwd = await mkdtemp(resolve('test-results/report-unit-'));
     try {
-        for (const input of [null, 'not json', 'null']) {
+        const brokenTree = passingLive();
+        brokenTree.suites[0].specs[0].tests[0].results[0].steps = {};
+        for (const input of [null, 'not json', 'null', '{"suites":{}}', JSON.stringify(brokenTree)]) {
             if (input !== null) {
                 await mkdir(join(cwd, 'test-results'), { recursive: true });
                 await writeFile(join(cwd, 'test-results/results.json'), input);
             }
             const result = spawnSync(process.execPath, [resolve('tools/summary.mjs')], {
                 cwd,
-                env: { ...process.env, GITHUB_STEP_SUMMARY: join(cwd, 'job-summary.md') }
+                env: { PATH: process.env.PATH, LIVE_SCENARIO: 'typed', GITHUB_STEP_SUMMARY: join(cwd, 'job-summary.md') }
             });
             assert.equal(result.status, 1);
             const data = JSON.parse(await readFile(join(cwd, 'sanitized-report/summary.json'), 'utf8'));
             assert.equal(data.passed, false);
             assert.equal(data.runnerFailed, true);
+            assert.equal(data.quality.missing.length, 2);
             assert.match(
                 await readFile(join(cwd, 'sanitized-report/index.html'), 'utf8'),
                 /No test results were recorded/

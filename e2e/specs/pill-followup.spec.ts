@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { embedded, evidence, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
+import { embedded, evidence, findCorrelatedReply, hasRenderedReplyAfterQuestion, installProbe, limitMessageSends, pdps, visit } from '../support/storefront';
 
 test('storefront starter pill and follow-up receive two replies in one fresh drawer session', async ({
     page
@@ -67,33 +67,7 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
             await expect
                 .poll(
                     async () => {
-                        replyId = await page.evaluate(
-                            ({ id, conversation, earlierReply }) => {
-                                const entries = window.__widgetProbe.entries;
-                                const inConversation = (entry) =>
-                                    !entry.conversation || entry.conversation === conversation;
-                                const echo = entries.findIndex(
-                                    (entry) =>
-                                        entry.id === id &&
-                                        ['EndUser', 'Customer'].includes(entry.role) &&
-                                        inConversation(entry)
-                                );
-                                if (echo < 0) return '';
-                                return (
-                                    entries
-                                        .slice(echo + 1)
-                                        .find(
-                                            (entry) =>
-                                                entry.id &&
-                                                entry.id !== earlierReply &&
-                                                entry.nonempty &&
-                                                ['Chatbot', 'Agent'].includes(entry.role) &&
-                                                inConversation(entry)
-                                        )?.id || ''
-                                );
-                            },
-                            { id: sent.id, conversation: sent.conversation, earlierReply: previous?.replyId }
-                        );
+                        replyId = await findCorrelatedReply(page, sent, previous?.replyId);
                         return Boolean(replyId);
                     },
                     { timeout: 60000, message: 'AGENT_REPLY: new agent message after the matching user echo' }
@@ -103,30 +77,9 @@ test('storefront starter pill and follow-up receive two replies in one fresh dra
 
         await stage(kind + '_REPLY_RENDERED', async () => {
             await expect
-                .poll(
-                    () =>
-                        drawer.evaluate(
-                            (node, question) => {
-                                const prompt = Array.from(node.querySelectorAll('.cim-widget-user-message-text')).find(
-                                    (message) => message.textContent?.trim() === question
-                                );
-                                if (!prompt) return false;
-                                return Array.from(
-                                    node.querySelectorAll(
-                                        '.cim-widget-message-group.chatbot, .cim-widget-message-group.human-agent'
-                                    )
-                                ).some(
-                                    (reply) =>
-                                        (prompt.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING) !==
-                                            0 &&
-                                        reply.checkVisibility() &&
-                                        (reply.textContent?.trim().length ?? 0) > 0
-                                );
-                            },
-                            expectedMessages[turn - 1]
-                        ),
-                    { message: 'REPLY_RENDERED: agent bubble after the matching user message' }
-                )
+                .poll(() => hasRenderedReplyAfterQuestion(drawer, expectedMessages[turn - 1]), {
+                    message: 'REPLY_RENDERED: visible agent bubble after the matching user message'
+                })
                 .toBe(true);
         });
 

@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { loadTarget } from '../targets.mjs';
 export const target = loadTarget();
 export const origin = target.origin;
@@ -24,6 +24,48 @@ export async function evidence(page: Page, info: TestInfo, stages: string[]) {
         contentType: 'application/json'
     });
 }
+export async function findCorrelatedReply(
+    page: Page,
+    sent: { id: string; conversation: string },
+    earlierReply?: string
+): Promise<string> {
+    return page.evaluate(
+        ({ id, conversation, earlierReply }) => {
+            const entries = window.__widgetProbe.entries;
+            const inConversation = (entry) => !entry.conversation || entry.conversation === conversation;
+            const echo = entries.findIndex(
+                (entry) => entry.id === id && ['EndUser', 'Customer'].includes(entry.role) && inConversation(entry)
+            );
+            if (echo < 0) return '';
+            return (
+                entries.slice(echo + 1).find(
+                    (entry) =>
+                        entry.id && entry.id !== earlierReply && entry.nonempty &&
+                        ['Chatbot', 'Agent'].includes(entry.role) && inConversation(entry)
+                )?.id || ''
+            );
+        },
+        { id: sent.id, conversation: sent.conversation, earlierReply }
+    );
+}
+
+export function hasRenderedReplyAfterQuestion(drawer: Locator, question: string): Promise<boolean> {
+    return drawer.evaluate((node, question) => {
+        const prompt = Array.from(node.querySelectorAll('.cim-widget-user-message-text'))
+            .reverse()
+            .find((message) => message.textContent?.trim() === question && message.checkVisibility());
+        if (!prompt) return false;
+        return Array.from(
+            node.querySelectorAll('.cim-widget-message-group.chatbot, .cim-widget-message-group.human-agent')
+        ).some(
+            (reply) =>
+                (prompt.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+                reply.checkVisibility({ checkVisibilityCSS: true, checkOpacity: true }) &&
+                Boolean(reply.textContent?.trim())
+        );
+    }, question);
+}
+
 export async function limitMessageSends(page: Page, max: number) {
     let expected = '';
     const counts = { forwarded: 0, blocked: 0 };

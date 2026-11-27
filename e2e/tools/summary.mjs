@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { MAX_REFERENCE_PDPS } from '../targets.mjs';
+import { loadTarget, MAX_REFERENCE_PDPS } from '../targets.mjs';
 
 const healthSteps = {
     WIDGET_RENDER: 'Load PDP and render the widget',
@@ -66,8 +66,14 @@ const completedStages = new Set([
 ]);
 const statuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
 const duration = (value) => (Number.isFinite(value) && value >= 0 && value <= 3600000 ? Math.round(value) : null);
+function records(value = []) {
+    if (!Array.isArray(value) || value.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) {
+        throw new Error('Invalid Playwright report structure');
+    }
+    return value;
+}
 function attachment(result, name) {
-    const body = result?.attachments?.find((item) => item.name === name)?.body;
+    const body = records(result.attachments).find((item) => item.name === name)?.body;
     if (typeof body !== 'string' || body.length > 100000) return {};
     try {
         return JSON.parse(Buffer.from(body, 'base64').toString('utf8')) || {};
@@ -75,57 +81,72 @@ function attachment(result, name) {
         return {};
     }
 }
-function flatten(steps = []) {
-    return steps.flatMap((step) => [step, ...flatten(step.steps)]);
+function flatten(steps) {
+    return records(steps).flatMap((step) => [step, ...flatten(step.steps)]);
 }
+function readStages(rawSteps, labels) {
+    let priorStageFailed = false;
+    return Object.entries(labels).map(([id, name]) => {
+        const matches = rawSteps.filter((step) => step.title === id);
+        const step = matches.length === 1 ? matches[0] : undefined;
+        const durationMs = duration(step?.duration);
+        const status = step?.error
+            ? 'failed'
+            : durationMs !== null
+              ? 'passed'
+              : !matches.length && priorStageFailed
+                ? 'not-run'
+                : 'not-recorded';
+        if (status === 'failed') priorStageFailed = true;
+        return { id, name, status, durationMs };
+    });
+}
+const expectedSends = { 'storefront-readonly': 0, 'storefront-health': 1, 'storefront-pill-followup': 2 };
+
 export function summarize(report, source = 'unknown', run = {}) {
     report = report && typeof report === 'object' && !Array.isArray(report) ? report : { errors: [{}] };
     const metadata = report.config?.metadata;
-    const referenceCount = metadata?.referencePdpCount;
+    const scenario = run.scenario ?? 'typed';
+    const chatProject = Object.hasOwn(chatProjects, scenario) ? chatProjects[scenario] : null;
+    const expected = ['storefront-readonly', chatProject].filter(Boolean);
+    const referenceCount = run.target?.pdps.length ?? metadata?.referencePdpCount;
     const readOnlySteps = layoutSteps(
         Number.isInteger(referenceCount) && referenceCount >= 2 ? Math.min(referenceCount, MAX_REFERENCE_PDPS) : 2
     );
+    const stepsFor = (project) => project === 'storefront-readonly' ? readOnlySteps : projects[project]?.steps || {};
     const tests = [];
-    const visit = (suites = []) => {
-        for (const suite of suites) {
-            for (const spec of suite.specs || []) {
-                for (const test of spec.tests || []) {
+    let runnerFailed = !chatProject;
+    const visit = (suites) => {
+        for (const suite of records(suites)) {
+            for (const spec of records(suite.specs)) {
+                for (const test of records(spec.tests)) {
+                    const result = records(test.results).at(-1);
+                    if (!result) continue;
                     const project = Object.hasOwn(projects, test.projectName) ? test.projectName : 'unknown';
-                    const definition = projects[project] || { name: 'Unrecognized live check', steps: {} };
-                    const result = test.results?.at(-1);
-                    const status = statuses.has(result?.status) ? result.status : 'interrupted';
-                    const rawSteps = flatten(result?.steps);
-                    const labels = project === 'storefront-readonly' ? readOnlySteps : definition.steps;
-                    const steps = Object.entries(labels).map(([id, name]) => {
-                        const step = rawSteps.find((item) => item.title === id);
-                        return {
-                            id,
-                            name,
-                            status: step
-                                ? step.error
-                                    ? 'failed'
-                                    : 'passed'
-                                : rawSteps.length
-                                  ? 'not-run'
-                                  : 'not-recorded',
-                            durationMs: step ? duration(step.duration) : null
-                        };
-                    });
-                    const codedFailure = result?.error?.message?.match(/\b([A-Z_0-9]+):/)?.[1];
-                    const failureStage =
-                        status === 'passed' || status === 'skipped'
-                            ? null
-                            : failureCodes.has(codedFailure)
-                              ? codedFailure
-                              : steps.find((step) => step.status === 'failed')?.id || 'UNKNOWN';
+                    const name = projects[project]?.name || 'Unrecognized live check';
+                    const steps = readStages(flatten(result.steps), stepsFor(project));
+                    const codedFailure = result.error?.message?.match?.(/\b([A-Z_0-9]+):/)?.[1];
                     const evidence = attachment(result, 'sanitized-stages');
                     const count = attachment(result, 'sanitized-health').requestCount;
+                    const requestCount = Number.isInteger(count) && count >= 0 && count <= 100 ? count : null;
                     const config = evidence.config || {};
+                    let status = statuses.has(result.status) ? result.status : 'interrupted';
+                    let failureStage = status === 'passed' || status === 'skipped'
+                        ? null
+                        : failureCodes.has(codedFailure)
+                          ? codedFailure
+                          : steps.find((step) => step.status === 'failed')?.id || 'UNKNOWN';
+                    if (status === 'passed' &&
+                        (!steps.length || steps.some((step) => step.status !== 'passed') ||
+                            requestCount !== expectedSends[project])) {
+                        status = 'failed';
+                        failureStage = 'REPORT_EVIDENCE';
+                    }
                     tests.push({
                         project,
-                        name: definition.name,
+                        name,
                         status,
-                        durationMs: duration(result?.duration),
+                        durationMs: duration(result.duration),
                         steps,
                         failureStage,
                         stages: Array.isArray(evidence.stages)
@@ -133,7 +154,7 @@ export function summarize(report, source = 'unknown', run = {}) {
                                   .map((s) => (typeof s === 'string' ? s.split(':')[0] : ''))
                                   .filter((s) => completedStages.has(s) || Object.hasOwn(readOnlySteps, s))
                             : [],
-                        requestCount: Number.isInteger(count) && count >= 0 && count <= 100 ? count : null,
+                        requestCount,
                         mode: ['inline', 'hybrid', 'shopper-agent'].includes(config.mode) ? config.mode : 'unknown',
                         preWarm: typeof config.preWarm === 'boolean' ? config.preWarm : null
                     });
@@ -142,37 +163,65 @@ export function summarize(report, source = 'unknown', run = {}) {
             visit(suite.suites);
         }
     };
-    visit(report.suites);
-    const start = typeof report.stats?.startTime === 'string' ? Date.parse(report.stats.startTime) : NaN;
+    try {
+        runnerFailed ||= records(report.errors).length > 0;
+        visit(report.suites);
+    } catch {
+        runnerFailed = true;
+        tests.length = 0;
+    }
+
     const counts = { passed: 0, failed: 0, skipped: 0 };
-    for (const test of tests)
+    for (const test of tests) {
         counts[test.status === 'passed' ? 'passed' : test.status === 'skipped' ? 'skipped' : 'failed']++;
+    }
+    const quality = {
+        expected: expected.length, passed: 0, failed: 0, skipped: 0, missing: [],
+        unexpected: tests.filter((test) => !expected.includes(test.project)).length,
+        stages: { expected: 0, passed: 0, failed: 0, notRun: 0, notRecorded: 0 }
+    };
+    for (const project of expected) {
+        const plannedStages = Object.keys(stepsFor(project)).length;
+        quality.stages.expected += plannedStages;
+        const matches = tests.filter((test) => test.project === project);
+        if (matches.length !== 1) {
+            if (matches.length) {
+                quality.failed++;
+                quality.unexpected += matches.length - 1;
+            } else {
+                quality.missing.push(projects[project].name);
+            }
+            quality.stages.notRecorded += plannedStages;
+            continue;
+        }
+        const test = matches[0];
+        quality[test.status === 'passed' ? 'passed' : test.status === 'skipped' ? 'skipped' : 'failed']++;
+        for (const step of test.steps) {
+            if (step.status === 'not-run') quality.stages.notRun++;
+            else if (step.status === 'not-recorded') quality.stages.notRecorded++;
+            else quality.stages[step.status]++;
+        }
+    }
+    const start = typeof report.stats?.startTime === 'string' ? Date.parse(report.stats.startTime) : NaN;
+    const targetId = run.target?.id ?? metadata?.target;
     const runId = /^\d{1,20}$/.test(run.id || '') ? run.id : null;
     const attempt = /^\d{1,6}$/.test(run.attempt || '') ? run.attempt : null;
-    const expected = ['storefront-readonly', chatProjects[run.scenario]];
-    const missingProjects =
-        run.scenario !== undefined &&
-        (!Object.hasOwn(chatProjects, run.scenario) ||
-            tests.length !== expected.length ||
-            expected.some((project) => !tests.some((test) => test.project === project)));
-    const runnerFailed = !!report.errors?.length || missingProjects;
     return {
         schemaVersion: 2,
         source: /^(?:[a-f0-9]{7,40}|local)$/.test(source) ? source : 'unknown',
-        target:
-            typeof metadata?.target === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(metadata.target)
-                ? metadata.target
-                : 'configured-storefront',
+        target: typeof targetId === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(targetId)
+            ? targetId
+            : 'configured-storefront',
         at: Number.isFinite(start) ? new Date(start).toISOString() : null,
         durationMs: duration(report.stats?.duration),
         runId,
         attempt,
         runUrl: runId ? `https://github.com/SalesforceCommerceCloud/inline-agent-widget/actions/runs/${runId}` : null,
         counts,
+        quality,
         runnerFailed,
         tests,
-        passed:
-            tests.length > 0 && !runnerFailed && tests.every((t) => t.status === 'passed' && t.project !== 'unknown')
+        passed: !runnerFailed && quality.passed === quality.expected && !quality.unexpected
     };
 }
 const escape = (value) =>
@@ -182,6 +231,7 @@ const escape = (value) =>
     );
 const elapsed = (ms) => (ms === null ? 'Not available' : `${(ms / 1000).toFixed(2)} s`);
 export function renderHtml(data) {
+    const { quality } = data;
     const checks = data.tests
         .map(
             (
@@ -195,10 +245,15 @@ export function renderHtml(data) {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Embedded widget live checks</title><style>
         body{font:16px system-ui,sans-serif;color:#203449;background:#f4f7fb;margin:0}main{max-width:1050px;margin:auto;padding:30px}h1{font-size:30px}h2{font-size:21px}section,.overview{background:white;border:1px solid #d6deea;border-radius:12px;padding:22px;margin:20px 0}.metrics{display:flex;gap:24px;flex-wrap:wrap}dt{font-weight:600}dd{margin:3px 0 12px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #e5eaf1}th{background:#f4f7fb}.notice{border-left:5px solid #bd8c25;padding-left:14px}code{overflow-wrap:anywhere}a{color:#075da5}@media(max-width:600px){main{padding:12px}section{padding:12px}th,td{padding:9px 4px}}
         </style></head><body><main><h1>Embedded widget live checks</h1><p>Functionality and availability. Agent answer accuracy is not evaluated.</p>
-        <div class="overview"><h2>${data.passed ? 'Passed' : 'Not passed'}</h2><div class="metrics"><span>Passed: ${data.counts.passed}</span><span>Failed: ${data.counts.failed}</span><span>Skipped: ${data.counts.skipped}</span><span>Total: ${escape(elapsed(data.durationMs))}</span></div>
+        <div class="overview"><h2>${data.passed ? 'Quality gate passed' : 'Quality gate failed'}</h2>
+        <p><strong>${quality.passed}/${quality.expected} required tests passed</strong> · ${quality.failed} failed · ${quality.skipped} skipped · ${quality.missing.length} missing${quality.unexpected ? ` · ${quality.unexpected} unexpected` : ''}</p>
+        <p><strong>${quality.stages.passed}/${quality.stages.expected} required stages passed</strong> · ${quality.stages.failed} failed · ${quality.stages.notRun} never reached · ${quality.stages.notRecorded} unrecorded</p>
+        ${quality.missing.length ? `<p>Missing tests: ${escape(quality.missing.join(', '))}</p>` : ''}
+        <p>Total duration: ${escape(elapsed(data.durationMs))}</p>
         <p>Target: ${escape(data.target)} · Started: ${escape(data.at)}</p><p>Source: <code>${escape(data.source)}</code></p>
         ${data.runUrl ? `<p><a href="${escape(data.runUrl)}">GitHub Actions run ${escape(data.runId)}</a> · Attempt ${escape(data.attempt)}</p>` : ''}</div>
         ${data.runnerFailed ? '<p class="notice">Runner or report-generation failure. Test results may be incomplete; raw errors are intentionally excluded.</p>' : ''}
+        ${data.tests.some((test) => test.failureStage === 'REPORT_EVIDENCE') ? '<p class="notice">A test reported success without all required stage and question-count evidence.</p>' : ''}
         ${checks || '<p class="notice">No test results were recorded. This is not a successful health check.</p>'}
         <p class="notice">Safe report: fixed check names, timings, statuses and allowlisted configuration only. No transcripts, raw errors, request bodies, tokens, browser storage, screenshots or traces. “Not run” stages were not reached. “Not recorded” means step evidence is unavailable, including older reports without named steps.</p></main></body></html>`;
 }
@@ -211,7 +266,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         report = { errors: [{}] };
         process.exitCode = 1;
     }
+    let target;
+    if (process.env.WIDGET_TARGET_JSON || process.env.WIDGET_TARGET_FILE || process.env.WIDGET_TARGET) {
+        try {
+            target = loadTarget();
+        } catch {
+            report = { errors: [{}] };
+        }
+    }
     const data = summarize(report, process.env.GITHUB_SHA || 'local', {
+        target,
         id: process.env.GITHUB_RUN_ID,
         attempt: process.env.GITHUB_RUN_ATTEMPT,
         scenario: process.env.LIVE_SCENARIO
@@ -223,7 +287,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (process.env.GITHUB_STEP_SUMMARY) {
         await writeFile(
             process.env.GITHUB_STEP_SUMMARY,
-            `## Embedded widget live checks\n\n${data.passed ? 'Passed' : 'Not passed'}: ${data.counts.passed} passed, ${data.counts.failed} failed, ${data.counts.skipped} skipped.\n\nDownload **widget-live-sanitized** for named stages, timings and failure classification. No chat content is included.\n`,
+            `## Embedded widget live checks\n\n${data.passed ? 'Quality gate passed' : 'Quality gate failed'}. ${data.quality.passed}/${data.quality.expected} required tests passed.\n\nDownload **widget-live-sanitized** for named stages, timings and failure classification. No chat content is included.\n`,
             { flag: 'a' }
         );
     }

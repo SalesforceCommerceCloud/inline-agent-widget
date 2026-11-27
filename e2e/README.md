@@ -1,41 +1,42 @@
-# Shared widget browser checks
+# Embedded Widget browser checks
 
-Node 22 and Playwright 1.58.2 with its matching Chromium are pinned for this suite.
+## Run before opening a PR
+
+Use Node 22. From the root of this checkout, set up dependencies and Chromium once.
 
 ```sh
 npm ci
-npm run build:umd
 npm ci --prefix e2e
-cd e2e
-npx playwright install chromium
-npm run test:tools
-npm test
+(cd e2e && npx playwright install chromium)
 ```
 
-The desktop/mobile contracts use the production UMD built from this checkout, a controlled SCRT2 transport and captured public handoff events. They import no SFRA cartridge code. SFRA gallery placement and drawer-host adapter cases remain in plugin_commerce_client PR #137.
+From the root, run these commands on your local branch. Rebuild the UMD whenever you change widget source.
 
-## Deployed targets
+```sh
+npm run build:umd
+npm run test:tools --prefix e2e
+npm test --prefix e2e
+npm run report --prefix e2e
+```
 
-`npm run test:deployed` checks the configured reference PDPs without sending a question. `npm run test:health` sends one anonymous question in a fresh context, with no retries, and checks the saved shopper-agent mode. It never changes BM configuration. Welcome text cannot count as the answer. A successful outgoing HTTP request proves acceptance only; a matching user echo followed by a nonempty agent event and visible response are also required. Answer accuracy is outside this suite.
+The local HTML report is `e2e/playwright-report/index.html`. Expand a test's named steps to see what ran and how long it took. Controlled failures include fixture screenshots and traces. Use `npm test --prefix e2e` for this check. A bare Playwright invocation in `e2e` can also select deployed-storefront projects.
 
-Local tests default to zyss-001 / NTO. The live workflow requires the repository Actions variable `WIDGET_LIVE_TARGET` with a non-secret JSON profile, passed to Playwright as `WIDGET_TARGET_JSON`. Locally, `WIDGET_TARGET_FILE` accepts a file with the same JSON profile containing `id`, HTTPS `origin`, `widgetSelector`, `placementSelector`, and 2–100 `pdps` entries (`id`, `name`, same-origin `path`). This supports other storefront hosts without copying the suite. Drawer checks currently expect the shared Commerce Client DOM. No PWA or SF Next target has been validated or enabled. Do not run other targets without authorization.
+## What the local run proves
 
-## Actions
+The controlled browser tests use the UMD built from **your checkout**, desktop and mobile Chromium emulation, and a simulated agent transport. They check widget modes, starter pills and input, session readiness, fallback and recovery, and the public handoff event. They also exercise the live checks' reply correlation and send limits using local fixtures. The tooling checks verify target validation and sanitized report handling. [SFRA browser integration](https://github.com/SalesforceCommerceCloud/plugin_commerce_client/pull/137) uses a separate fixture for the actual cartridge adapter, gallery CSS and a simulated drawer.
 
-**Shared widget browser merge check** runs Chromium for changes to the widget source, build inputs, E2E suite or browser workflow. Other changes report out of scope without browser setup.
+The Actions job **Shared widget browser merge check** uses the same controlled browser and tooling commands. It skips Chromium for unrelated paths. The **widget-regression** artifact contains the detailed Playwright report. Download and extract it, then run `npx playwright show-report <extracted-directory>` from `e2e`. New artifacts are retained for 14 days.
 
-The separate **Live widget storefront check** runs read-only checks on the reference PDPs, then the selected live scenario. Confirm the target in `WIDGET_LIVE_TARGET` before opting in. On a same-repository PR, adding `run-storefront-live-health` authorizes one typed question on that target. Adding `run-storefront-live-pill-followup` authorizes one starter pill and one follow-up in the same drawer. The browser intercepts sends and blocks extra or unexpected messages. The live report requires a passing read-only project and the selected chat project. After the workflow reaches main, manual dispatch offers the same scenario choices with `live_chat=true`. Later pushes and Actions reruns do not send messages.
+## Deployed storefront check
 
-The live job disables screenshots, traces and video. It uploads only the allowlisted status/stage summary and corresponding HTML; it never uploads the full Playwright report, transcripts, browser storage or raw network payloads. GitHub artifact access follows repository visibility; this summary deliberately contains no chat content. Controlled fixture reports may contain synthetic data. Source commit and observed deployed asset versions are distinct; a passing fixture does not prove deployment.
+`WIDGET_LIVE_TARGET` is a GitHub Actions variable containing a non-secret JSON target profile. It tells Playwright which already-deployed storefront to visit. It does not publish the widget, upload a cartridge, or deploy the PR. The test-run source SHA identifies the Playwright code. Use independent deployment evidence to associate a result with a particular storefront or widget revision.
 
-## Reading the reports
+The profile contains an `id`, HTTPS `origin`, `widgetSelector`, `placementSelector` and 2–100 `pdps` with `id`, `name` and same-origin `path`. The workflow passes it as `WIDGET_TARGET_JSON`. A separately authorized local run can use `WIDGET_TARGET_FILE` with the same fields. The built-in local default is zyss-001 / NTO. The live assertions currently use the Commerce Client drawer with the widget in saved `shopper-agent` mode. Validate the DOM and target assumptions before using another storefront.
 
-The **widget-regression** Actions artifact contains the native detailed Playwright HTML report for controlled tests. Extract it, then run `npx playwright show-report <extracted-directory>` (or `npm run report` after a local run). Select a scenario and expand its named steps to see setup, actions, assertions and durations. Coverage/environment annotations explain the scope. Failure screenshots and traces contain controlled fixture data only. Desktop/mobile means Chromium emulation, not native-device or cross-browser certification.
+The live job expects two results, the deployed PDP check and the chosen chat scenario. The chat scenario verifies outgoing context, HTTP acceptance, a correlated agent event and a new visible reply after the matching user question. The answer's factual accuracy is evaluated separately by Shopper Agent evals.
 
-The **widget-live-sanitized** artifact contains `index.html` and `summary.json`. Open its HTML directly: it shows run status/counts, source/run link, test durations, fixed check names and phase timings, failure stage, observed question count and allowlisted saved mode/pre-warm state. Missing/failed/skipped results cannot appear healthy. A runner failure or missing Playwright JSON generates a safe incomplete-report artifact. A step not reached is `not-run`; older reports without step evidence say `not-recorded` rather than invent timings. Raw errors, arbitrary step titles, paths, question/answer text and unknown metadata never enter the export.
+- On a same-repo PR, only add `run-storefront-live-health` for one authorized typed question or `run-storefront-live-pill-followup` for an authorized starter pill and follow-up in the same fresh drawer.
+- Once the workflow is on `main`, manual dispatch offers the same choices and requires `live_chat=true`. A later push or rerun does not send messages. Double-check the target before opting in.
+- `npm run test:deployed` visits the target without a question. `npm run test:health` sends a real question. Keep everyday local testing on the controlled commands above. Local live runner files can contain raw diagnostic data. Share only the sanitized export.
 
-Both artifacts are retained for 14 days on new runs. Each Actions job summary explains where to find its report. A controlled HTML report is for debugging individual tests; the sanitized live report is for safe operational diagnosis. Neither requires S3, IAM, UIP, Trino or Superset. Those integrations are deferred; no schedule or publishing identity is enabled here.
-
-Reporting checks cover success, failures, missing reports and separate evidence for each turn. The live report shows the forwarded send count and named stages for both replies.
-
-Each live attempt is single-shot. Investigate a failure before authorizing another question. The prior local monitor remains paused until an explicit handover decision.
+Download **widget-live-sanitized** (14 days) and open `index.html`. The report shows **required tests and stages passed**, failed, skipped, missing or unrecorded evidence, and named failure stages. The quality gate fails if a required test or stage is missing or if the observed send count differs from the selected scenario. If setup fails or the result file is malformed, the exporter writes a safe failed report. The artifact contains allowlisted statuses and timings plus `summary.json`. Live screenshots, traces, transcripts and raw network payloads are excluded.
