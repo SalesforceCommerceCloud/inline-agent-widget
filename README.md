@@ -284,3 +284,7 @@ or treat that response as proof that the existing bytes match. Follow the
 ## License
 
 MIT. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
+
+## Browser integration checks
+
+Use [the browser test guide](e2e/README.md) to run Playwright on your local branch and open the HTML report before starting a PR. It also explains the separate opt-in check for an already-deployed storefront.

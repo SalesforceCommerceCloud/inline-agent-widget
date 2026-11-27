@@ -1,0 +1,120 @@
+name: Widget browser checks
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: widget-browser-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scope:
+    name: Check changed files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.paths.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '2' }}
+          persist-credentials: false
+          sparse-checkout: .github
+      - id: paths
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$EVENT_NAME" in
+            pull_request) base="$(git rev-parse --verify HEAD^1)" ;;
+            merge_group) base="${MERGE_GROUP_BASE:?Missing merge group base SHA}" ;;
+            *) exit 1 ;;
+          esac
+
+          status=0
+          git diff --quiet --no-renames "$base" HEAD -- \
+              ':(top,glob)e2e/**' \
+              ':(top,glob)src/**' \
+              ':(top,glob)vite*.config.*' \
+              ':(top,glob)tsconfig*.json' \
+              package.json package-lock.json .npmrc \
+              .github/workflows/widget-browser.yml || status=$?
+          case "$status" in
+            0) echo "relevant=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "relevant=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+  regression:
+    name: Shared widget contracts (desktop and mobile)
+    needs: scope
+    if: needs.scope.outputs.relevant == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build:umd
+      - run: npm ci --prefix e2e
+      - run: cd e2e && npx playwright install --with-deps chromium
+      - run: npm run test:tools --prefix e2e
+      - name: Run controlled checks with grouped report steps
+        run: npm test --prefix e2e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: widget-regression
+          path: e2e/playwright-report
+          retention-days: 14
+      - name: Report guide
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'REPORT'
+          ### Shared widget browser report
+          Download **widget-regression**, extract it, and run `npx playwright show-report <extracted-directory>`.
+          The HTML contains named scenario steps, per-step durations, coverage annotations and failure traces/screenshots from controlled fixtures. No live agent was contacted by this job.
+          REPORT
+
+  gate:
+    name: Shared widget browser merge check
+    if: always()
+    needs: [scope, regression]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Report merge check result
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          RELEVANT: ${{ needs.scope.outputs.relevant }}
+          BROWSER_RESULT: ${{ needs.regression.result }}
+        run: |
+          case "$SCOPE_RESULT/$RELEVANT/$BROWSER_RESULT" in
+            success/false/skipped) echo "Out of scope. No relevant files changed." >> "$GITHUB_STEP_SUMMARY" ;;
+            success/true/success) echo "Chromium checks passed." >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::Widget merge check failed (scope=$SCOPE_RESULT, relevant=$RELEVANT, browser=$BROWSER_RESULT)."
+              exit 1
+              ;;
+          esac

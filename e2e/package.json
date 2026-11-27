@@ -1,0 +1,15 @@
+{
+  "name": "inline-agent-widget-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test --project=contract-desktop --project=contract-mobile",
+    "test:deployed": "playwright test --project=storefront-readonly",
+    "test:health": "WIDGET_LIVE_CHAT=1 playwright test --project=storefront-health",
+    "test:tools": "node --test tools/*.test.mjs",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2"
+  }
+}

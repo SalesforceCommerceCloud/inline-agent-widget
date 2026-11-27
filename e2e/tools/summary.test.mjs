@@ -1,0 +1,293 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { summarize, renderHtml } from './summary.mjs';
+import { validateTarget, loadTarget, targets, MAX_REFERENCE_PDPS } from '../targets.mjs';
+const attachment = (name, value) => ({ name, body: Buffer.from(JSON.stringify(value)).toString('base64') });
+function report(result = {}, overrides = {}) {
+    return {
+        stats: { startTime: '2026-11-23T09:54:00Z', duration: 12500 },
+        config: { metadata: { target: 'zyss-001' } },
+        suites: [
+            {
+                specs: [
+                    {
+                        title: 'not copied',
+                        tests: [
+                            {
+                                projectName: 'storefront-health',
+                                results: [{ status: 'passed', duration: 12000, ...result }]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        ...overrides
+    };
+}
+test('named phases retain measured durations and mark subsequent checks not run after failure', () => {
+    const data = summarize(
+        report({
+            status: 'failed',
+            steps: [
+                { title: 'WIDGET_RENDER', duration: 100 },
+                {
+                    title: 'DRAWER_OPEN',
+
+                    duration: 800,
+                    error: { message: 'private selector and token' }
+                }
+            ]
+        }),
+        'abcdef1234567',
+        { id: '1234', attempt: '1' }
+    );
+    assert.equal(data.tests[0].name, 'Fresh-session handoff and agent availability');
+    assert.equal(data.tests[0].failureStage, 'DRAWER_OPEN');
+    assert.equal(data.tests[0].steps[0].durationMs, 100);
+    assert.equal(data.tests[0].steps.find((s) => s.id === 'DRAWER_OPEN').status, 'failed');
+    assert.equal(data.tests[0].steps.find((s) => s.id === 'MESSAGE_ACCEPTED').status, 'not-run');
+    assert.deepEqual(data.counts, { passed: 0, failed: 1, skipped: 0 });
+    assert.equal(data.at, '2026-11-23T09:54:00.000Z');
+    assert.equal(data.runUrl, 'https://github.com/SalesforceCommerceCloud/inline-agent-widget/actions/runs/1234');
+    const html = renderHtml(data);
+    assert.match(html, /Open the shopper-agent drawer/);
+    assert.match(html, /0.80 s/);
+    assert.match(html, /Quality gate failed/);
+});
+test('only allowlisted names, configuration and failure codes can leave a raw live report', () => {
+    const secret = '<script>secret-token</script>';
+    const raw = report({
+        status: 'failed',
+        error: { message: 'MESSAGE_SENT: ' + secret },
+        steps: [
+            { title: secret, duration: 99, error: { message: secret } },
+            { title: 'DRAWER_OPEN', duration: 12 }
+        ],
+        attachments: [
+            attachment('sanitized-stages', {
+                stages: ['WIDGET_RENDER', 'WIDGET_RENDER:' + secret, secret],
+                config: { mode: 'shopper-agent', preWarm: true, productName: secret },
+                assets: [secret]
+            }),
+            attachment('sanitized-health', { requestCount: 1, entries: [secret] })
+        ]
+    });
+    raw.suites[0].specs[0].title = secret;
+    raw.config.metadata.target = secret;
+    const data = summarize(raw, secret, { id: secret, attempt: secret });
+    assert.equal(data.passed, false);
+    assert.equal(data.tests[0].failureStage, 'MESSAGE_SENT');
+    assert.equal(data.tests[0].requestCount, 1);
+    assert.equal(data.tests[0].mode, 'shopper-agent');
+    assert.equal(data.tests[0].preWarm, true);
+    assert.deepEqual(data.tests[0].stages, ['WIDGET_RENDER', 'WIDGET_RENDER']);
+    assert.equal(data.source, 'unknown');
+    assert.equal(data.runUrl, null);
+    assert.equal(JSON.stringify(data).includes('secret-token'), false);
+    assert.equal(renderHtml(data).includes('secret-token'), false);
+    assert.equal(renderHtml(data).includes('<script'), false);
+});
+test('two-turn report keeps separate reply stages and excludes conversation data', () => {
+    const raw = report({
+        steps: [
+            { title: 'PILL_REPLY_RENDERED', duration: 25 },
+            { title: 'FOLLOWUP_REPLY_RENDERED', duration: 40 }
+        ],
+        attachments: [
+            attachment('sanitized-health', { requestCount: 2, conversation: 'private-conversation' }),
+            attachment('sanitized-stages', { stages: ['PILL_REPLY_RENDERED', 'FOLLOWUP_REPLY_RENDERED'] })
+        ]
+    });
+    raw.suites[0].specs[0].tests[0].projectName = 'storefront-pill-followup';
+    const data = summarize(raw);
+    assert.equal(data.passed, false);
+    assert.equal(data.tests[0].requestCount, 2);
+    assert.deepEqual(data.tests[0].stages, ['PILL_REPLY_RENDERED', 'FOLLOWUP_REPLY_RENDERED']);
+    assert.equal(data.tests[0].steps.find((step) => step.id === 'FOLLOWUP_REPLY_RENDERED').durationMs, 40);
+    assert.doesNotMatch(JSON.stringify(data), /private-conversation/);
+});
+test('malformed evidence and invalid numeric fields do not copy raw values or break reporting', () => {
+    const data = summarize(
+        report({
+            duration: -1,
+            attachments: [
+                { name: 'sanitized-stages', body: 'not-json' },
+                attachment('sanitized-health', { requestCount: 'secret' })
+            ],
+            steps: [{ title: 'WIDGET_RENDER', duration: 1e99 }]
+        })
+    );
+    assert.equal(data.tests[0].durationMs, null);
+    assert.equal(data.tests[0].steps[0].durationMs, null);
+    assert.equal(data.tests[0].requestCount, null);
+    assert.deepEqual(data.tests[0].stages, []);
+});
+test('missing, skipped, interrupted and runner-failed results never count as healthy', () => {
+    assert.equal(summarize({}).passed, false);
+    assert.equal(summarize(report({}, { errors: [{ message: 'private runner error' }] })).passed, false);
+    for (const status of ['skipped', 'timedOut', 'interrupted'])
+        assert.equal(summarize(report({ status })).passed, false);
+    const unknown = report();
+    unknown.suites[0].specs[0].tests[0].projectName = 'private-project';
+    assert.equal(summarize(unknown).passed, false);
+    assert.equal(summarize(unknown).tests[0].project, 'unknown');
+    const absent = report();
+    absent.suites[0].specs[0].tests[0].results = [];
+    assert.equal(summarize(absent).tests.length, 0);
+    assert.match(renderHtml(summarize({})), /No test results were recorded/);
+});
+function passingLive(scenario = 'typed') {
+    const chat = scenario === 'typed' ? 'storefront-health' : 'storefront-pill-followup';
+    const raw = report();
+    const tests = raw.suites[0].specs[0].tests;
+    tests[0].projectName = chat;
+    tests.push({ projectName: 'storefront-readonly', results: [{ status: 'passed', duration: 100 }] });
+    const plan = summarize(raw, 'local', { scenario }).tests;
+    for (const [index, test] of tests.entries()) {
+        const requestCount = index === 0 ? (scenario === 'typed' ? 1 : 2) : 0;
+        test.results[0].steps = plan[index].steps.map(({ id }) => ({ title: id, duration: 50 }));
+        test.results[0].attachments = [attachment('sanitized-health', { requestCount })];
+    }
+    return raw;
+}
+
+test('a live workflow requires both projects and all expected stages, plus the correct send counts', () => {
+    for (const [scenario, expectedStages] of [['typed', 13], ['pill-followup', 19]]) {
+        const raw = passingLive(scenario);
+        const data = summarize(raw, 'local', { scenario });
+        assert.equal(data.passed, true);
+        assert.equal(data.quality.expected, 2);
+        assert.equal(data.quality.stages.expected, expectedStages);
+        assert.match(renderHtml(data), /2\/2 required tests passed/);
+
+        const tests = raw.suites[0].specs[0].tests;
+        const initial = tests[0].results[0].steps;
+        for (const steps of [[], initial.slice(1), [...initial, initial[0]]]) {
+            tests[0].results[0].steps = steps;
+            const failed = summarize(raw, 'local', { scenario });
+            assert.equal(failed.passed, false);
+            assert.equal(failed.tests[0].failureStage, 'REPORT_EVIDENCE');
+            assert.match(renderHtml(failed), /1\/2 required tests passed/);
+        }
+        tests[0].results[0].steps = initial;
+        tests[0].results[0].attachments = [attachment('sanitized-health', { requestCount: 0 })];
+        assert.equal(summarize(raw, 'local', { scenario }).passed, false);
+    }
+});
+
+test('required tests distinguish missing, skipped, duplicate and wrong-scenario results', () => {
+    const raw = passingLive();
+    const tests = raw.suites[0].specs[0].tests;
+    const initial = tests[0].results[0];
+    tests[0].results[0] = { status: 'skipped' };
+    assert.equal(summarize(raw).quality.skipped, 1);
+    tests[0].results[0] = initial;
+    assert.equal(summarize(raw, 'local', { scenario: 'pill-followup' }).quality.unexpected, 1);
+    tests.push(tests[0]);
+    assert.equal(summarize(raw).passed, false);
+    assert.equal(summarize(raw).quality.unexpected, 1);
+    tests.splice(0, 1);
+    tests.pop();
+    const missing = summarize(raw);
+    assert.equal(missing.runnerFailed, false);
+    assert.equal(missing.quality.missing.length, 1);
+    assert.match(renderHtml(missing), /1 missing/);
+});
+
+test('nested readonly results show both reference PDPs without exposing product identities', () => {
+    const raw = report({ steps: [{ title: 'PDP_1_RENDER', duration: 10 }] });
+    raw.suites[0].specs[0].tests[0].projectName = 'storefront-readonly';
+    raw.suites = [{ suites: raw.suites }];
+    const data = summarize(raw);
+    assert.equal(data.tests[0].steps.length, 4);
+    assert.equal(data.tests[0].steps[0].name, 'Reference PDP 1: render widget');
+    assert.equal(data.tests[0].steps[3].status, 'not-recorded');
+});
+test('configured profile reports reference stages beyond the default two PDPs', () => {
+    const raw = report({
+        steps: [{ title: 'PDP_3_RENDER', duration: 63 }],
+        attachments: [attachment('sanitized-stages', { stages: ['PDP_3_RENDER'] })]
+    });
+    raw.config.metadata = { target: 'preview-fixture', referencePdpCount: 3 };
+    raw.suites[0].specs[0].tests[0].projectName = 'storefront-readonly';
+    const data = summarize(raw);
+    assert.equal(data.target, 'preview-fixture');
+    assert.equal(data.tests[0].steps.length, 6);
+    assert.equal(data.tests[0].steps.find((step) => step.id === 'PDP_3_RENDER').durationMs, 63);
+    assert.deepEqual(data.tests[0].stages, ['PDP_3_RENDER']);
+});
+test('HTML escapes any display values and uses no external assets', () => {
+    const data = summarize(report());
+    data.source = '<img src=x onerror="alert(1)">';
+    const html = renderHtml(data);
+    assert.match(html, /&lt;img/);
+    assert.equal(html.includes('<img'), false);
+    assert.equal(html.includes('<script'), false);
+    assert.equal(html.includes('<link'), false);
+});
+test('CLI produces a useful failure artifact when Playwright JSON is missing or malformed', async () => {
+    await mkdir('test-results', { recursive: true });
+    const cwd = await mkdtemp(resolve('test-results/report-unit-'));
+    try {
+        const brokenTree = passingLive();
+        brokenTree.suites[0].specs[0].tests[0].results[0].steps = {};
+        for (const input of [null, 'not json', 'null', '{"suites":{}}', JSON.stringify(brokenTree)]) {
+            if (input !== null) {
+                await mkdir(join(cwd, 'test-results'), { recursive: true });
+                await writeFile(join(cwd, 'test-results/results.json'), input);
+            }
+            const result = spawnSync(process.execPath, [resolve('tools/summary.mjs')], {
+                cwd,
+                env: { PATH: process.env.PATH, LIVE_SCENARIO: 'typed', GITHUB_STEP_SUMMARY: join(cwd, 'job-summary.md') }
+            });
+            assert.equal(result.status, 1);
+            const data = JSON.parse(await readFile(join(cwd, 'sanitized-report/summary.json'), 'utf8'));
+            assert.equal(data.passed, false);
+            assert.equal(data.runnerFailed, true);
+            assert.equal(data.quality.missing.length, 2);
+            assert.match(
+                await readFile(join(cwd, 'sanitized-report/index.html'), 'utf8'),
+                /No test results were recorded/
+            );
+        }
+    } finally {
+        await rm(cwd, { recursive: true, force: true });
+    }
+});
+test('Actions target JSON selects the configured storefront', () => {
+    const profile = { ...targets.zyss, id: 'fixture', origin: 'https://storefront.example.test' };
+    const WIDGET_TARGET_JSON = JSON.stringify(profile);
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON }), profile);
+    assert.deepEqual(loadTarget({ WIDGET_TARGET_JSON: '' }), targets.zyss);
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON, WIDGET_TARGET: 'zyss' }), /choose one/);
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON: 'incomplete' }), /could not read target as JSON/);
+
+    profile.pdps = [{ id: 'foreign', name: 'Foreign', path: '//elsewhere.invalid/pdp' }, ...profile.pdps];
+    assert.throws(() => loadTarget({ WIDGET_TARGET_JSON: JSON.stringify(profile) }), /same origin|selected origin/);
+});
+test('target configuration supports other storefronts while rejecting cross-origin PDPs', () => {
+    assert.equal(loadTarget({}).id, 'zyss-001');
+    assert.throws(() => loadTarget({ WIDGET_TARGET: 'missing' }));
+    assert.throws(
+        () =>
+            validateTarget({
+                ...targets.zyss,
+                pdps: Array(MAX_REFERENCE_PDPS + 1).fill(targets.zyss.pdps[0])
+            }),
+        /reference PDPs/
+    );
+    assert.throws(() =>
+        validateTarget({
+            ...targets.zyss,
+            pdps: [{ id: 'a', name: 'A', path: '//elsewhere.invalid/a' }, targets.zyss.pdps[1]]
+        })
+    );
+    assert.equal(
+        validateTarget({ ...targets.zyss, id: 'pwa', origin: 'https://example.com', placementSelector: 'main' }).id,
+        'pwa'
+    );
+});
